@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#a9d2ff">
+  <meta name="color-scheme" content="light">
+  <title>引元 · 小元的家</title>
+  <link rel="stylesheet" href="styles.css?v=weather-preview-20261019">
+  <link rel="stylesheet" href="conversation.css?v=memory-chat-20261016">
+  <link rel="stylesheet" href="conversation-history.css">
+  <link rel="stylesheet" href="devices.css?v=device-header-20261020">
+  <link rel="stylesheet" href="device-settings.css?v=device-detail-ac-20261015-2">
+  <link rel="stylesheet" href="device-detail.css?v=device-detail-ac-20261015-2">
+  <link rel="stylesheet" href="device-onboarding.css?v=native-20261021">
+  <link rel="stylesheet" href="memory.css?v=memory-voice-icon-20261016">
+  <link rel="stylesheet" href="mine.css?v=mine-details-20261016-4">
+  <link rel="stylesheet" href="people.css?v=mine-details-20261016-4">
+  <link rel="stylesheet" href="home-context.css?v=home-20261020">
+  <link rel="stylesheet" href="home-scenarios.css?v=scene-matters-copy-20261021">
+  <link rel="stylesheet" href="home-services.css?v=care-card-actions-20261021">
+  <link rel="stylesheet" href="event-adjustment.css?v=event-adjustment-20261022">
+  <link rel="stylesheet" href="home-shell.css?v=home-20261020">
+</head>
+<body>
+  <div class="app" id="app">
+    <div class="sky" aria-hidden="true"><div class="weather-atmosphere"><img class="weather-layer" src="assets/weather/sunny.png" alt="" decoding="async"><img class="weather-layer" src="assets/weather/sunny.png" alt="" decoding="async" style="opacity:0"></div></div>
+    <img class="statusbar" src="assets/statusbar.png" alt="" aria-hidden="true">
+    <main class="home-screen" id="home-screen">
+      <div class="home-scroll" id="home-scroll">
+      <header class="home-header">
+        <div class="header-row">
+          <button class="home-name" id="home-name" aria-label="管理家庭名称"><span id="home-title">潘多拉的家</span><span class="asset chevron-home"><img src="assets/chevron-home.svg" alt=""></span></button>
+          <button class="manage-button" id="manage-spaces">空间管理</button>
+          <button class="capsule" id="miniapp-menu" aria-label="小程序菜单"><img src="assets/miniapp-capsule.png" alt=""></button>
+        </div>
+        <p class="device-summary">小元正在了解家庭空间</p>
+      </header>
+        <div id="home-context"></div>
+        <section id="home-services" aria-label="小元的关注照料"></section>
+      </div>
+      <div class="home-bottom-fade" aria-hidden="true"></div>
+      <button class="voice-entry" id="voice-entry" aria-label="和小元交流"><span>请尽情吩咐～</span><span class="asset voice-icon"><img src="assets/voice.svg" alt=""></span></button>
+      <div id="home-legacy" hidden aria-hidden="true" inert>
+      <section class="graph-region" id="graph-region" aria-label="家庭空间关系">
+        <canvas id="graph" aria-label="空间关系图谱，点击查看房间状态，拖动节点调整视图位置"></canvas>
+        <div id="graph-hit-layer" class="graph-hit-layer"></div>
+        <button class="space-state" id="space-state" aria-label="查看当前空间详情" data-sensing="available"><span class="asset space-status-indicator" aria-hidden="true"><img src="assets/space-status-dot.svg" alt=""></span><span id="space-state-primary">1人在场</span><span id="space-state-secondary">安静停留</span></button>
+      </section>
+      <section class="consciousness-preview" aria-label="小元当前状态">
+        <button class="consciousness-link" id="open-consciousness"><span class="asset consciousness-icon"><img src="assets/consciousness.svg" alt=""></span><span>小元的意识空间</span><span class="asset chevron-consciousness"><img src="assets/chevron-consciousness.svg" alt=""></span><span class="task-dot" id="task-dot" hidden></span></button>
+        <p class="thought" id="thought">我在留意家里的变化</p>
+      </section>
+      <section class="capability-guides" aria-label="小元能帮你做什么">
+        <button data-guide="home"><span class="asset bulb"><img src="assets/bulb.svg" alt=""></span><span>家里的环境和设备，我可以帮你照看</span></button>
+        <button data-guide="life"><span class="asset bulb"><img src="assets/bulb.svg" alt=""></span><span>日常安排和生活问题，可以告诉我</span></button>
+        <button data-guide="work"><span class="asset bulb"><img src="assets/bulb.svg" alt=""></span><span>整理资料、梳理思路，工作也能帮上忙</span></button>
+      </section>
+      <aside class="device-receipt" id="device-receipt" hidden role="status" aria-label="设备状态反馈" data-variant="level">
+        <div class="receipt-picture"><img id="receipt-image" src="assets/receipt-lamp.png" alt=""></div>
+        <div class="receipt-copy"><strong id="receipt-name">客厅主灯</strong><p id="receipt-summary">客厅主灯已调至60%</p><div class="receipt-data" id="receipt-data"><div class="receipt-rail"><span id="receipt-fill"></span></div><b id="receipt-value">60%</b></div></div>
+      </aside>
+      </div>
+    </main>
+    <section id="home-services-page" hidden aria-label="小元的关注照料"></section>
+    <section id="memory-page" hidden aria-label="记忆"></section>
+    <section id="memory-detail-page" hidden aria-label="记忆详情"></section>
+    <section id="mine-page" hidden aria-label="我的"></section>
+    <section id="mine-detail-page" hidden aria-label="我的设置"></section>
+    <section id="people-page" hidden aria-label="人物识别"></section>
+    <section id="devices-page" hidden aria-label="家庭设备"></section>
+    <section id="device-detail-page" hidden aria-label="设备详情"></section>
+    <section id="device-settings-page" hidden aria-label="空间与设备管理"></section>
+    <section id="device-onboarding-page" hidden aria-label="新增设备"></section>
+    <nav class="tabbar" aria-label="主页面">
+      <button data-tab="home" aria-current="page"><span class="asset nav-icon"><img src="assets/nav-home.svg" alt=""></span><span>首页</span></button>
+      <button data-tab="devices"><span class="asset nav-icon"><img src="assets/nav-devices.svg" alt=""></span><span>设备</span></button>
+      <button data-tab="memory"><img class="nav-icon" src="assets/nav-memory.svg?v=20261016" alt=""><span>记忆</span></button>
+      <button data-tab="profile"><img class="nav-icon" src="assets/nav-mine.svg?v=20261016" alt=""><span>我的</span></button>
+      <span class="home-indicator" aria-hidden="true"></span>
+    </nav>
+    <dialog id="sheet" class="sheet"><div class="sheet-body" id="sheet-body"></div></dialog>
+    <section class="consciousness-page" id="consciousness-page" hidden aria-labelledby="consciousness-title">
+      <header class="page-header"><button id="back-home" class="icon-button" aria-label="返回首页"></button><h1 id="consciousness-title">小元的意识空间</h1><button id="open-recent-logs" class="text-button">最近日志</button></header>
+      <div class="consciousness-content" id="consciousness-content"></div>
+      <footer class="consciousness-footer"><span class="home-indicator" aria-hidden="true"></span></footer>
+    </section>
+    <section class="consciousness-page attention-page" id="attention-page" hidden aria-labelledby="attention-title">
+      <header class="page-header"><button id="attention-back" class="icon-button" aria-label="返回意识空间"></button><h1 id="attention-title">小元还在关注</h1></header>
+      <div class="consciousness-content attention-page-content" id="attention-content">
+        <p class="attention-page-summary" id="attention-summary"></p>
+        <div class="attention-list" id="attention-list"></div>
+      </div>
+      <footer class="consciousness-footer"><span class="home-indicator" aria-hidden="true"></span></footer>
+    </section>
+    <section class="space-management-page" id="space-management-page" hidden aria-labelledby="space-management-title">
+      <header class="space-page-header"><button id="spaces-back" class="icon-button" aria-label="返回首页"></button><h1 id="space-management-title">空间管理</h1><button id="spaces-more" class="icon-button" aria-label="空间管理操作" hidden></button></header>
+      <div class="space-page-content" id="space-management-content"></div>
+      <footer class="space-page-footer"><button class="primary-button" id="add-room">添加空间</button><span class="home-indicator" aria-hidden="true"></span></footer>
+    </section>
+    <output class="toast" id="toast" role="status" hidden></output>
+  </div>
+  <script type="module" src="app.js?v=family-overview-copy-20261022-2"></script>
+</body>
+</html>

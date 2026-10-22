@@ -1,0 +1,13 @@
+/* One vertical canvas at the established 402 × 874 reference size. */
+.home-screen{height:812px;min-height:0;padding:0;overflow:visible}
+.home-scroll{height:100%;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;padding:4.5px 0 210px;overflow-anchor:none}
+.home-scroll::-webkit-scrollbar{display:none}
+.home-scroll>.home-header{padding-left:18.5px;padding-right:20px}
+.home-bottom-fade{position:absolute;z-index:5;pointer-events:none;left:0;right:0;bottom:83px;height:119px;background:linear-gradient(180deg,#ecf1f600 0%,#ecf1f6ad 40%,#ecf1f6 85%)}
+.home-bottom-fade:before{content:"";position:absolute;inset:0;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);mask-image:linear-gradient(transparent,#000 70%);-webkit-mask-image:linear-gradient(transparent,#000 70%)}
+.home-screen>.voice-entry{bottom:106px;z-index:6}
+.app:not([data-view])>.tabbar{background:rgba(255,255,255,.6)}
+.app[data-view="home-services"]>.sky{display:block;background:linear-gradient(#e3f0ff,#ecf1f6)}
+.app[data-view="home-services"]>.sky>*{display:none}
+#home-legacy{display:none!important}
+.app[data-view=spaces] #spaces-more{display:none}
