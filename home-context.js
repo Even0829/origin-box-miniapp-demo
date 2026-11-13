@@ -1,9 +1,10 @@
+import {deriveSpaceState, spaceCardContent} from './home-space-state.js?v=home-people-summary-20261105';
 import {previewNow} from './preview-clock.js';
-import {createHomeScenarios} from './home-scenarios.js?v=scene-matters-copy-20261021';
+import {createHomeScenarios} from './home-scenarios.js?v=first-use-20261110-final';
 const escapeHTML = (value = '') => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const clock = (stamp) => new Date(stamp || previewNow()).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
 
-export function createHomeContext({ container, getRooms = () => [], getPeople = () => [], getMemories = () => [], onRemember, store, openSheet, toast, icon, onSpaceDetail, onDeviceDetail, onService, onRecord, onServiceDetail } = {}) {
+export function createHomeContext({ hasSpatialModel = true, seedInsights = true, container, getRooms = () => [], getPeople = () => [], getSpaceState = null, getMemories = () => [], onRemember, store, openSheet, toast, icon, onSpaceDetail, onDeviceDetail, onService, onRecord, onServiceDetail } = {}) {
   if (!container || !store) throw new Error('首页空间概览缺少容器或设备状态');
   let selected = getRooms()[0]?.id || null;
   let scenarios = null;
@@ -31,7 +32,9 @@ export function createHomeContext({ container, getRooms = () => [], getPeople = 
   };
 
   container.classList.add('home-context');
+  if(!hasSpatialModel)container.classList.add('hc-no-spatial-model');
   container.innerHTML = `<section class="hc-hero" aria-label="家庭空间概览">
+    ${!hasSpatialModel?'<div class="hc-radar-stage" aria-hidden="true"><img src="assets/space-radar.png" alt=""></div><p class="hc-radar-caption">暂未接入空间建模设备</p>':''}
     <img class="hc-house" src="assets/home-house.png" alt="家庭空间模型" draggable="false">
     <button class="hc-room-status" type="button" aria-label="查看当前空间详情"></button>
     <div class="hc-space-picker"><button class="hc-space-select" type="button" aria-haspopup="listbox" aria-expanded="false"><span></span><span class="hc-space-arrow" aria-hidden="true"><img src="assets/home-space-arrow.svg" alt=""></span></button><div class="hc-space-popup" role="listbox" aria-label="选择空间" hidden></div></div>
@@ -53,24 +56,7 @@ export function createHomeContext({ container, getRooms = () => [], getPeople = 
   }
 
   function roomData(room) {
-    const devices = allDevices().filter((device) => device.roomId === room.id);
-    const environment = devices.filter((device) => device.type === 'environment');
-    const available = environment.find((device) => device.online && device.permissions?.read !== false);
-    const environmentMissing = environment.length > 0 && !available;
-    const reading = (key) => available?.readings?.find((item) => item.key === key && Number.isFinite(item.value));
-    const temperature = reading('temperature');
-    const humidity = reading('humidity');
-    const presenceDevices = devices.filter((device) => device.inputCapabilities?.includes('在场'));
-    const presenceMissing = presenceDevices.length > 0 && presenceDevices.every((device) => !device.online || device.permissions?.read === false);
-    const presenceUnavailable = presenceMissing || !room.observed;
-    const presence = presenceUnavailable ? '在场状态待更新' : String(room.presence || '在场信息待更新');
-    const activity = presenceUnavailable ? '' : String(room.activity || '').replace('暂无活动证据', '暂无活动');
-    const presenceText = presence;
-    const primary = [presenceText, activity && activity !== '暂无活动' ? activity : ''].filter(Boolean).join(' · ');
-    const values = environmentMissing ? '温湿度待更新' : [temperature ? `${temperature.value}℃` : Number.isFinite(room.temperature) && !environment.length ? `${room.temperature}℃` : '', humidity ? `${humidity.value}%` : Number.isFinite(room.humidity) && !environment.length ? `${room.humidity}%` : ''].filter(Boolean).join(' · ') || '温湿度待更新';
-    // 接入中断只影响对应的信息，不把离线解释为无人或空气异常。
-    const airText = !environmentMissing && room.observed && room.airQuality ? `空气${room.airQuality}` : '空气状态待更新';
-    return { primary, values, airText, missing: environmentMissing || presenceUnavailable };
+    return getSpaceState?.(room) || deriveSpaceState(room, allDevices());
   }
 
   function renderFamilyOverview() {
@@ -106,8 +92,8 @@ export function createHomeContext({ container, getRooms = () => [], getPeople = 
     const data = roomData(room);
     status.disabled = false;
     status.dataset.sensing = data.missing ? 'pending' : 'available';
-    status.setAttribute('aria-label', `${room.name}：${data.primary}，${data.values}，${data.airText}，查看详情`);
-    status.innerHTML = `<strong>${escapeHTML(data.primary)}</strong><span>${escapeHTML(data.values)}<br>${escapeHTML(data.airText)}</span>`;
+    status.setAttribute('aria-label', [`${room.name}：${data.primary}`, data.people.map(person => person.name).join('、'), data.unidentified ? `${data.unidentified}人待识别` : '', data.activity, data.motion, data.values, data.airText, '查看详情'].filter(Boolean).join('，'));
+    status.innerHTML = spaceCardContent(data);
     select.disabled = false;
     select.querySelector('span').textContent = room.name;
     select.setAttribute('aria-expanded', String(popupOpen));
@@ -239,7 +225,7 @@ export function createHomeContext({ container, getRooms = () => [], getPeople = 
   container.addEventListener('keydown', onKeydown);
   document.addEventListener('pointerdown', onOutsidePointer);
   document.addEventListener('visibilitychange', onVisibility);
-  scenarios = createHomeScenarios({container, store, getRooms, getPeople, getMemories, onRemember, openSheet, toast, icon, onService, onRecord, onServiceDetail, onDeviceDetail});
+  scenarios = createHomeScenarios({seedInsights,container, store, getRooms, getPeople, getMemories, onRemember, openSheet, toast, icon, onService, onRecord, onServiceDetail, onDeviceDetail});
   const unsubscribe = store.subscribe(refresh);
   // 初次呈现一个可定位、可恢复的来源离线状态，与设备页共用同一对象。
   const humiditySource = store.get('bathroom-humidity');

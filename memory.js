@@ -18,7 +18,7 @@ function memoryIcon(name) {
 }
 
 // 用户记忆用于查看与修正当前理解；修改不改写既往经历，也不触发设备或会话操作。
-export function createMemoryPage({ page, detailPage, store, getRooms, setView, openSheet, toast, icon, onConverse }) {
+export function createMemoryPage({ page, detailPage, store, getRooms, setView, openSheet, toast, icon, onConverse, onAdd }) {
   const document = page.ownerDocument;
   const sheet = document.querySelector('#sheet');
   const e = escapeHTML;
@@ -36,7 +36,7 @@ export function createMemoryPage({ page, detailPage, store, getRooms, setView, o
   let listScroll = 0;
   let lastListSignature = '';
   let lastDetailSignature = '';
-  let detailBase = null, detailDraft = null, lastShortExpiry = '', saving = false;
+
 
   page.classList.add('mm-page');
   page.setAttribute('aria-labelledby', 'mm-title');
@@ -124,109 +124,28 @@ export function createMemoryPage({ page, detailPage, store, getRooms, setView, o
     return `<details class="mm-disclosure" data-mm-section="revisions"><summary><span>最近修正</span>${memoryIcon('down')}</summary><div class="mm-revision-list">${item.previous.map((entry) => `<article class="mm-revision"><strong>${e(entry.text)}</strong>${entry.scopeText ? `<p>${e(entry.scopeText)}</p>` : ''}${formatTime(entry.at) ? `<time>${e(formatTime(entry.at))}</time>` : ''}</article>`).join('')}</div></details>`;
   }
 
-  function draftFrom(item) {
-    return { text: item.text, type: item.type, roomId: item.roomId, context: item.context || '', expiresAt: item.expiresAt, enabled: item.enabled, confirmUnderstanding: false };
-  }
-  function normalizedDraft(draft) {
-    return { text: draft.text.trim(), type: draft.type, roomId: draft.roomId || null, context: draft.context.trim(), expiresAt: draft.type === 'long' ? null : draft.expiresAt || '', enabled: draft.enabled, confirmUnderstanding: Boolean(draft.confirmUnderstanding) };
-  }
-  function detailDirty() { return Boolean(detailBase && detailDraft && JSON.stringify(normalizedDraft(detailDraft)) !== JSON.stringify(normalizedDraft(draftFrom(detailBase)))); }
-  function updateSaveButton() {
-    const button = detailQuery('.mm-save-button');
-    if (button) button.disabled = saving || !detailDirty();
-  }
-  function draftItem() {
-    const value = normalizedDraft(detailDraft);
-    return { ...detailBase, ...value, understanding: value.confirmUnderstanding ? 'clear' : detailBase.understanding, expired: value.type === 'short' && Boolean(value.expiresAt) && value.expiresAt < store.today() };
-  }
-  function applyVoiceDraft(plan) {
-    if (!detailDraft || !detailBase || plan.next?.id !== detailBase.id) return false;
-    for (const field of ['text', 'type', 'roomId', 'context', 'expiresAt', 'confirmUnderstanding']) if (field in plan.patch) detailDraft[field] = plan.patch[field];
-    if (plan.enabled !== undefined) detailDraft.enabled = plan.enabled;
-    if (detailDraft.type === 'short') lastShortExpiry = detailDraft.expiresAt || '';
-    renderDetail(true);
-    if (currentView === 'memory-detail') requestAnimationFrame(() => detailQuery('.mm-save-button')?.focus({ preventScroll: true }));
-    return draftItem();
-  }
   function renderDetail(force = false) {
-    if (disposed || !detailId || saving) return;
-    const current = store.get(detailId);
-    if (!current) { if (currentView === 'memory-detail') { toast('这条记忆已不可用'); returnToList(); } return; }
-    const signature = JSON.stringify(current);
+    if (disposed || !detailId) return;
+    const item = store.get(detailId);
+    if (!item) { if (currentView === 'memory-detail') { toast('这条记忆已不可用'); returnToList(); } return; }
+    const signature = JSON.stringify(item);
     if (!force && signature === lastDetailSignature) return;
-    if (!detailBase || !detailDraft || (!detailDirty() && signature !== JSON.stringify(detailBase))) {
-      detailBase = current; detailDraft = draftFrom(current); lastShortExpiry = current.expiresAt || '';
-    }
-    const item = detailBase, value = detailDraft;
     const scroll = detailQuery('.mm-detail-scroll'), top = scroll.scrollTop;
-    const openSections = [...scroll.querySelectorAll('details[open]')].map((element) => element.dataset.mmSection);
-    const roomOptions = [{ id: '', name: '不限定空间' }, ...rooms()];
-    if (value.roomId && !roomOptions.some((room) => room.id === value.roomId)) roomOptions.push({ id: value.roomId, name: '原空间已移除' });
-    scroll.innerHTML = `<form class="mm-form mm-detail-editor" id="mm-detail-form" novalidate>
-      <div class="mm-edit-status">${statusBadges(item)}${item.understanding === 'clear' ? '<span class="mm-badge" data-status="clear">已明确</span>' : ''}</div>
-      <div class="mm-field"><label for="mm-detail-text">记住的事</label><textarea class="mm-textarea" id="mm-detail-text" name="text" maxlength="80" rows="3">${e(value.text)}</textarea></div>
-      <div class="mm-edit-scope"><span>所属范围</span><strong>${item.visibility === 'family' ? '家庭共享' : '仅自己'}</strong></div>
-      <div class="mm-edit-row"><div class="mm-field"><label for="mm-detail-type">适用时效</label><select id="mm-detail-type" name="type"><option value="short" ${value.type === 'short' ? 'selected' : ''}>短期</option><option value="long" ${value.type === 'long' ? 'selected' : ''}>长期</option></select></div><div class="mm-field"><label for="mm-detail-room">适用空间</label><select id="mm-detail-room" name="roomId">${roomOptions.map((room) => `<option value="${e(room.id)}" ${(value.roomId || '') === room.id ? 'selected' : ''}>${e(room.name)}</option>`).join('')}</select></div></div>
-      <div class="mm-field" id="mm-detail-date-field" ${value.type === 'long' ? 'hidden' : ''}><label for="mm-detail-expiry">适用至</label><input id="mm-detail-expiry" type="date" name="expiresAt" min="${e(store.today())}" value="${e(value.expiresAt || '')}"><p class="mm-field-hint">截止日期当天仍适用</p></div>
-      <div class="mm-field"><label for="mm-detail-context">适用情境<span class="mm-optional">可选</span></label><input id="mm-detail-context" name="context" maxlength="40" value="${e(value.context)}" placeholder="例如：阅读、晚间休息"></div>
-      <div class="mm-edit-use"><label><input id="mm-detail-enabled" type="checkbox" role="switch" name="enabled" aria-label="使用这条记忆" aria-describedby="mm-use-hint" ${value.enabled ? 'checked' : ''}><span>使用这条记忆</span><small id="mm-use-hint">停用后保留记录，不再作为帮助依据</small></label></div>
-      ${item.understanding !== 'clear' ? `<div class="mm-edit-confirm"><label><input type="checkbox" name="confirmUnderstanding" ${value.confirmUnderstanding ? 'checked' : ''}><span>确认当前理解</span></label></div>` : ''}
-      <p class="mm-save-feedback" role="alert"></p>
-    </form>
-    <details class="mm-disclosure" data-mm-section="source"><summary><span>来源与用途</span>${memoryIcon('down')}</summary><section class="mm-detail-section"><p class="mm-detail-source">${e(item.sourceLabel || '你告诉我的')}</p>${item.sourceDetail ? `<p>${e(item.sourceDetail)}</p>` : ''}<p>适用对象：${e(item.subject)}</p>${item.help ? `<p>${e(item.help)}</p>` : ''}${formatTime(item.updatedAt) ? `<p>更新于 ${e(formatTime(item.updatedAt))}</p>` : ''}</section></details>${evidenceMarkup(item)}${revisionsMarkup(item)}`;
+    const openSections = [...scroll.querySelectorAll('details[open]')].map(el => el.dataset.mmSection);
+    scroll.innerHTML = `<section class="mm-detail-intro"><div class="mm-detail-tags"><span class="mm-type">${item.type === 'short' ? '短期记忆' : '长期记忆'}</span>${statusBadges(item)}</div><h2 class="mm-detail-conclusion">${e(item.text)}</h2><p class="mm-detail-updated">更新于 ${e(formatTime(item.updatedAt))}</p></section>
+      <section class="mm-read-card"><dl class="mm-detail-facts">${fact('可见范围', item.visibility === 'family' ? '家庭共享' : '仅自己')}${fact('适用时间', item.periodText)}${item.roomId ? fact('适用空间', item.roomName) : ''}${item.context ? fact('适用情境', item.context) : ''}${fact('使用状态', !item.enabled ? '已停用' : item.expired ? '已到期' : '使用中')}</dl></section>
+      ${!item.enabled || item.expired ? `<p class="mm-detail-notice">${item.expired ? '适用时间已结束' : '已暂停使用这条记忆'}，记录仍会保留。可以告诉小元新的安排。</p>` : ''}
+      <details class="mm-disclosure" data-mm-section="source"><summary><span>来源与用途</span>${memoryIcon('down')}</summary><section class="mm-detail-section"><p class="mm-detail-source">${e(item.sourceLabel || '你告诉我的')}</p>${item.sourceDetail ? `<p>${e(item.sourceDetail)}</p>` : ''}${item.help ? `<p>${e(item.help)}</p>` : ''}</section></details>${evidenceMarkup(item)}${revisionsMarkup(item)}`;
     for (const key of openSections) scroll.querySelector(`details[data-mm-section="${key}"]`)?.setAttribute('open', '');
-    detailQuery('.mm-detail-footer').innerHTML = `<button class="mm-ai-entry" data-mm-action="tell-memory" aria-label="告诉小元纠正这条记忆"><span>告诉小元，帮我纠正这条记忆</span><span class="mm-ai-voice"><img src="assets/voice.svg" alt=""></span></button><button class="mm-save-button primary-button" data-mm-action="save" type="submit" form="mm-detail-form" ${!detailDirty() ? 'disabled' : ''}>保存</button>`;
-    detailQuery('#mm-detail-form').onsubmit = (event) => { event.preventDefault(); saveDetail(); };
+    detailQuery('.mm-detail-footer').innerHTML = `<button class="mm-ai-entry" data-mm-action="tell-memory" aria-label="补充或纠正这条记忆"><span>告诉小元，补充或纠正这条记忆</span><span class="mm-ai-voice"><img src="assets/voice.svg" alt=""></span></button>`;
     scroll.scrollTop = top;
     lastDetailSignature = signature;
   }
-  function detailInput(event) {
-    const input = event.target;
-    if (!detailDraft || input.form?.id !== 'mm-detail-form' || !input.name) return;
-    if (input.name === 'enabled' || input.name === 'confirmUnderstanding') detailDraft[input.name] = input.checked;
-    else if (input.name === 'roomId') detailDraft.roomId = input.value || null;
-    else if (input.name === 'type') {
-      if (detailDraft.type === 'short') lastShortExpiry = detailDraft.expiresAt || '';
-      detailDraft.type = input.value;
-      detailDraft.expiresAt = input.value === 'short' ? lastShortExpiry : null;
-      detailQuery('#mm-detail-date-field').hidden = input.value === 'long';
-      detailQuery('#mm-detail-expiry').value = detailDraft.expiresAt || '';
-    } else { detailDraft[input.name] = input.value; if (input.name === 'expiresAt') lastShortExpiry = input.value; }
-    detailQuery('.mm-save-feedback').textContent = '';
-    input.removeAttribute('aria-invalid');
-    updateSaveButton();
-  }
-  function detailError(field, message) {
-    detailQuery('.mm-save-feedback').textContent = message;
-    const input = field ? detailQuery(`[name="${field}"]`) : null;
-    input?.setAttribute('aria-invalid', 'true'); input?.focus();
-  }
-  function saveDetail() {
-    if (!detailDirty() || saving) return !detailDirty();
-    const current = store.get(detailId);
-    if (JSON.stringify(current) !== JSON.stringify(detailBase)) { detailError(null, '这条记忆已有新变化，请返回后重新打开再调整'); return false; }
-    const value = normalizedDraft(detailDraft);
-    if (value.enabled && value.type === 'short' && (!value.expiresAt || value.expiresAt < store.today())) { detailError('expiresAt', '请先设置今天或之后的适用日期'); return false; }
-    const patch = {};
-    for (const key of ['text', 'type', 'roomId', 'context', 'expiresAt']) if (value[key] !== detailBase[key]) patch[key] = value[key];
-    if (value.confirmUnderstanding) patch.confirmUnderstanding = true;
-    saving = true; updateSaveButton();
-    let result = { ok: true, item: current };
-    if (Object.keys(patch).length) result = store.update(detailId, patch);
-    if (result.ok && value.enabled !== result.item.enabled) result = store.setEnabled(detailId, value.enabled);
-    saving = false;
-    if (!result.ok) { detailError(result.field, result.error || '暂时无法保存，请重试'); updateSaveButton(); return false; }
-    detailBase = store.get(detailId); detailDraft = draftFrom(detailBase); lastDetailSignature = '';
-    renderMain(true); renderDetail(true); toast('已保存');
-    return true;
-  }
-
   function openDetail(id) {
     if (!store.get(id)) { toast('这条记忆已不可用'); return; }
     listScroll = query('.mm-scroll').scrollTop;
     lastCardId = id;
     detailId = id;
-    detailBase = store.get(id); detailDraft = draftFrom(detailBase); lastShortExpiry = detailBase.expiresAt || '';
     lastDetailSignature = '';
     currentView = 'memory-detail';
     renderDetail(true);
@@ -246,56 +165,6 @@ export function createMemoryPage({ page, detailPage, store, getRooms, setView, o
     modalQuery('#mm-filter-apply').onclick = () => { filter = draft; renderMain(true, true); closeSheet(); };
   }
 
-  function showEditor(id = null, initialField = null) {
-    const item = id ? store.get(id) : null;
-    if (id && !item) { toast('这条记忆已不可用'); return; }
-    const editing = Boolean(item), selectedType = item?.type || 'long';
-    const confirming = editing && initialField !== 'expiresAt' && item.understanding !== 'clear';
-    const label = editing ? (initialField === 'expiresAt' ? '调整适用时间' : confirming ? '核对理解' : '纠正理解') : '添加记忆';
-    const roomOptions = [{ id: '', name: '不限定空间' }, ...rooms()];
-    if (item?.roomId && !roomOptions.some((room) => room.id === item.roomId)) roomOptions.push({ id: item.roomId, name: '原空间已移除' });
-    const fieldError = (field) => `<p class="mm-field-error" id="mm-error-${field}" role="alert"></p>`;
-    openSheet(label, `<form class="mm-form" id="mm-editor" novalidate><div class="mm-field"><label for="mm-memory-text">要记住的事</label><textarea class="mm-textarea" id="mm-memory-text" name="text" rows="3" maxlength="80" placeholder="例如：阅读时偏好柔和的灯光" aria-describedby="mm-error-text">${e(item?.text || '')}</textarea>${fieldError('text')}<p class="mm-field-hint">简洁描述一件事，最多80字</p></div>${editing ? `<div class="mm-readonly-field"><span>所属范围</span><strong>${item.visibility === 'family' ? '家庭共享' : '仅自己'}</strong></div>` : `<fieldset class="mm-visibility"><legend>所属范围</legend><label><input type="radio" name="visibility" value="personal" checked><span>仅自己</span></label><label><input type="radio" name="visibility" value="family"><span>家庭共享</span></label><p class="mm-field-hint">家庭共享内容会作为家庭共同安排的参考</p>${fieldError('visibility')}</fieldset>`}<div class="mm-form-row"><div class="mm-field"><label for="mm-memory-type">适用时效</label><select class="mm-select" id="mm-memory-type" name="type"><option value="short" ${selectedType === 'short' ? 'selected' : ''}>短期</option><option value="long" ${selectedType === 'long' ? 'selected' : ''}>长期</option></select>${fieldError('type')}</div><div class="mm-field"><label for="mm-memory-room">适用空间</label><select class="mm-select" id="mm-memory-room" name="roomId">${roomOptions.map((room) => `<option value="${e(room.id)}" ${(item?.roomId || '') === room.id ? 'selected' : ''}>${e(room.name)}</option>`).join('')}</select>${fieldError('roomId')}</div></div><div class="mm-field" id="mm-date-field" ${selectedType === 'long' ? 'hidden' : ''}><label for="mm-memory-expiry">适用至</label><input class="mm-input" id="mm-memory-expiry" type="date" name="expiresAt" min="${e(store.today())}" value="${e(item?.expiresAt || '')}" aria-describedby="mm-error-expiresAt"><p class="mm-field-hint">截止日期当天仍适用，到期后停止使用</p>${fieldError('expiresAt')}</div><div class="mm-field"><label for="mm-memory-context">适用情境<span class="mm-optional">可选</span></label><input class="mm-input" id="mm-memory-context" name="context" maxlength="40" value="${e(item?.context || '')}" placeholder="例如：阅读、晚间休息" aria-describedby="mm-error-context">${fieldError('context')}</div><p class="mm-form-error" id="mm-form-error" role="alert"></p></form><div class="dialog-actions"><button class="secondary-button" id="mm-editor-cancel" type="button">取消</button><button class="primary-button" id="mm-editor-save" type="submit" form="mm-editor">${editing ? (confirming ? '确认并保存' : '保存修改') : '添加记忆'}</button></div>`, { initialFocus: initialField === 'expiresAt' ? '#mm-memory-expiry' : '#mm-memory-text', restoreFocus: () => { if (currentView === 'memory-detail') detailQuery('[data-mm-action="edit"]')?.focus({ preventScroll: true }); else if (currentView === 'memory') query('.mm-add').focus({ preventScroll: true }); } });
-    sheet.dataset.content = 'memory-editor';
-    modalQuery('#mm-editor-cancel').onclick = closeSheet;
-    modalQuery('#mm-memory-type').onchange = () => { modalQuery('#mm-date-field').hidden = modalQuery('#mm-memory-type').value !== 'short'; clearEditorError('expiresAt'); };
-    modalQuery('#mm-editor').addEventListener('input', (event) => { clearEditorError(event.target.name); });
-    modalQuery('#mm-editor').addEventListener('change', (event) => { clearEditorError(event.target.name); });
-    modalQuery('#mm-editor').onsubmit = (event) => {
-      event.preventDefault();
-      clearAllEditorErrors();
-      const form = modalQuery('#mm-editor');
-      const nextType = form.elements.type.value;
-      const draft = { text: form.elements.text.value.trim(), type: nextType, roomId: form.elements.roomId.value || null, context: form.elements.context.value.trim(), expiresAt: nextType === 'short' ? form.elements.expiresAt.value : null };
-      if (!editing) draft.visibility = form.elements.visibility.value;
-      if (confirming) draft.confirmUnderstanding = true;
-      const result = editing ? store.update(item.id, draft) : store.create(draft);
-      if (!result.ok) { showEditorError(result.field, result.error || '暂时无法保存，请重试'); return; }
-      const savedId = result.id || result.item?.id || item?.id;
-      closeSheet();
-      if (!editing && savedId) openDetail(savedId);
-      else refresh(true);
-      toast(editing ? (confirming ? '已确认这条理解' : '记忆已更新') : '已添加记忆');
-    };
-  }
-
-  function clearEditorError(field) {
-    if (!field) return;
-    const error = modalQuery(`#mm-error-${field}`);
-    if (error) error.textContent = '';
-    const input = modalQuery(`#mm-editor [name="${field}"]`);
-    input?.removeAttribute('aria-invalid');
-    const general = modalQuery('#mm-form-error');
-    if (general) general.textContent = '';
-  }
-  function clearAllEditorErrors() { sheet.querySelectorAll('.mm-field-error,.mm-form-error').forEach((element) => { element.textContent = ''; }); sheet.querySelectorAll('[aria-invalid]').forEach((element) => element.removeAttribute('aria-invalid')); }
-  function showEditorError(field, message) {
-    const input = field ? modalQuery(`#mm-editor [name="${field}"]`) : null;
-    const target = field ? modalQuery(`#mm-error-${field}`) : null;
-    (target || modalQuery('#mm-form-error')).textContent = message;
-    if (input) { input.setAttribute('aria-invalid', 'true'); input.focus(); }
-  }
-
   function chooseType(next) { if (next === type) return; type = next; renderMain(true, true); }
   function resetFilters() { type = 'all'; filter = { scope: 'all', state: 'current' }; renderMain(true, true); }
   function clearSearch() { search = ''; query('#mm-search').value = ''; renderMain(true, true); query('#mm-search').focus({ preventScroll: true }); }
@@ -305,20 +174,15 @@ export function createMemoryPage({ page, detailPage, store, getRooms, setView, o
     const tab = event.target.closest('[data-mm-tab]');
     if (tab) { chooseType(tab.dataset.mmTab); return; }
     const action = event.target.closest('[data-mm-action]')?.dataset.mmAction;
-    if (action === 'add') showEditor();
+    if (action === 'add') onAdd?.({ onReturn: () => open(), onDetail: openDetail });
     if (action === 'filter') showFilters();
     if (action === 'clear-search') clearSearch();
     if (action === 'reset-filters') resetFilters();
   }
   function startCorrection() {
-    const id = detailId;
-    let snapshot = JSON.stringify(draftItem());
-    onConverse?.({ item: draftItem(), today: store.today(), onConfirm: (plan) => {
-      if (detailId !== id || !detailDraft || JSON.stringify(draftItem()) !== snapshot) return false;
-      const updated = applyVoiceDraft(plan);
-      if (updated) snapshot = JSON.stringify(updated);
-      return updated;
-    }, onReturn: () => { setView('memory-detail'); renderDetail(true); detailQuery('.mm-ai-entry')?.focus({ preventScroll: true }); } });
+    const item = store.get(detailId);
+    if (!item) { toast('这条记忆已不可用'); return; }
+    onConverse?.({ item, onDetail: openDetail, onReturn: () => { setView('memory-detail'); renderDetail(true); detailQuery('.mm-ai-entry')?.focus({ preventScroll: true }); } });
   }
   function detailClick(event) {
     const action = event.target.closest('[data-mm-action]')?.dataset.mmAction;
@@ -338,27 +202,18 @@ export function createMemoryPage({ page, detailPage, store, getRooms, setView, o
 
   function open() { currentView = 'memory'; renderMain(true); setView('memory'); query('.mm-scroll').scrollTop = listScroll; }
   function returnToList() {
-    currentView = 'memory'; detailId = null; detailBase = null; detailDraft = null;
+    currentView = 'memory'; detailId = null;
     setView('memory'); renderMain(true); query('.mm-scroll').scrollTop = listScroll; focusCard(lastCardId);
   }
-  function back() {
-    if (currentView !== 'memory-detail') return;
-    if (!detailDirty()) { returnToList(); return; }
-    openSheet('保存修改？', '<p class="confirm-description">这条记忆有尚未保存的修改</p><div class="dialog-actions"><button class="secondary-button" id="mm-discard">不保存</button><button class="primary-button" id="mm-save-and-back">保存并返回</button></div>', { variant: 'float' });
-    sheet.dataset.content = 'memory-unsaved';
-    modalQuery('#mm-discard').onclick = () => { closeSheet(); returnToList(); };
-    modalQuery('#mm-save-and-back').onclick = () => { closeSheet(); if (saveDetail()) returnToList(); };
-  }
+  function back() { if (currentView === 'memory-detail') returnToList(); }
   function onViewChange(view) { currentView = view; if (view === 'memory') renderMain(); else if (view === 'memory-detail') renderDetail(); }
   function refresh(force = false) { if (disposed) return; renderMain(force); renderDetail(force); }
-  const unsubscribe = store.subscribe(() => { if (!saving) refresh(); });
+  const unsubscribe = store.subscribe(() => refresh());
   page.addEventListener('click', mainClick);
   page.addEventListener('keydown', tabKeyDown);
   query('#mm-search').addEventListener('input', searchInput);
   detailPage.addEventListener('click', detailClick);
-  detailPage.addEventListener('input', detailInput);
-  detailPage.addEventListener('change', detailInput);
 
   refresh(true);
-  return { open, back, onViewChange, refresh, destroy() { disposed = true; unsubscribe?.(); page.removeEventListener('click', mainClick); page.removeEventListener('keydown', tabKeyDown); query('#mm-search').removeEventListener('input', searchInput); detailPage.removeEventListener('click', detailClick); detailPage.removeEventListener('input', detailInput); detailPage.removeEventListener('change', detailInput); } };
+  return { open, openDetail, back, onViewChange, refresh, destroy() { disposed = true; unsubscribe?.(); page.removeEventListener('click', mainClick); page.removeEventListener('keydown', tabKeyDown); query('#mm-search').removeEventListener('input', searchInput); detailPage.removeEventListener('click', detailClick); } };
 }

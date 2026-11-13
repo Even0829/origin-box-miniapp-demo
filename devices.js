@@ -4,7 +4,7 @@ const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;'
 const readingTimeFormat=new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Shanghai'});
 
 /** Device browsing and capability presentation share the family's device store. */
-export function createDevicesPage({page,store,getRooms,getFamilyName,setView,openSheet,toast,icon,onSettings,onAddDevice,onFamilyName,onMenu,onDeviceDetail}){
+export function createDevicesPage({hasSpatialModel=true,page,store,getRooms,getFamilyName,setView,openSheet,toast,icon,onSettings,onAddDevice,onFamilyName,onMenu,onDeviceDetail}){
   const $=selector=>page.querySelector(selector),sheet=()=>document.querySelector('#sheet');
   const rooms=()=>getRooms(),devices=()=>store.getDevices(),roomName=id=>rooms().find(room=>room.id===id)?.name??'未设置空间';
   let filter='all',heroRoomId=rooms()[0]?.id,heroElapsed=0,lastTick=performance.now(),wasPaused=true,returnScroll=0;
@@ -18,7 +18,7 @@ export function createDevicesPage({page,store,getRooms,getFamilyName,setView,ope
       <button class="capsule" id="devices-menu" aria-label="小程序菜单"><img src="assets/miniapp-capsule.png" alt=""></button>
     </div><p class="device-summary" id="devices-summary"></p></header>
     <section class="device-space-hero" aria-label="设备的空间能力与调度">
-      <div class="device-house" aria-hidden="true"><img src="assets/home-house.png" alt=""></div>
+      ${hasSpatialModel?'<div class="device-house" aria-hidden="true"><img src="assets/home-house.png" alt=""></div>':'<div class="device-radar-stage" aria-hidden="true"><img src="assets/space-radar.png" alt=""></div><p class="device-radar-caption">暂未接入空间建模设备</p>'}
       <div class="device-room-picker"><button class="device-room-chip" id="device-room-chip" aria-label="选择空间能力" aria-haspopup="listbox" aria-expanded="false" aria-controls="device-room-popup"><span id="device-hero-room"></span><span class="device-room-arrow" aria-hidden="true"><img src="assets/device-space-arrow.svg" alt=""></span></button><div class="device-room-popup" id="device-room-popup" role="listbox" aria-label="选择设备空间" hidden></div></div>
       <button class="device-capability-float device-capability-input hero-dynamic" id="device-input-summary" aria-label="查看空间的信息来源"></button>
       <button class="device-capability-float device-capability-response hero-dynamic" id="device-response-summary" aria-label="查看空间的调节设备"></button>
@@ -109,7 +109,7 @@ export function createDevicesPage({page,store,getRooms,getFamilyName,setView,ope
     const list=devices().filter(device=>filter==='all'||device.roomId===filter),grid=$('#device-grid');
     const scroll=$('#devices-scroll'),previousScroll=page.hidden?null:scroll.scrollTop;
     const focused=document.activeElement,focusId=focused?.dataset?.devicePower,detailId=focused?.dataset?.deviceDetail;
-    grid.innerHTML=list.length?list.map(cardMarkup).join(''):`<div class="device-empty">${icon('room')}<h2>${filter==='all'?'还没有接入设备':'这个空间还没有设备'}</h2><p>${filter==='all'?'接入设备后，小元可结合空间信息提供服务':'可在设置中调整设备的位置'}</p><button class="primary-button" data-empty-action="${filter==='all'?'add':'settings'}">${filter==='all'?'新增设备':'设置设备位置'}</button></div>`;
+    grid.innerHTML=list.length?list.map(cardMarkup).join(''):`<div class="device-empty"><h2>${filter==='all'?'还没有接入设备':'这个空间还没有设备'}</h2><p>${filter==='all'?'接入设备后，小元可结合空间信息提供服务':'可在设置中调整设备的位置'}</p><button class="primary-button" data-empty-action="${filter==='all'?'add':'settings'}">${filter==='all'?'新增设备':'设置设备位置'}</button></div>`;
     if(previousScroll!==null)scroll.scrollTop=previousScroll;
     if(focusId){const power=grid.querySelector(`[data-device-power="${CSS.escape(focusId)}"]`);(power?.disabled?grid.querySelector(`[data-device-detail="${CSS.escape(focusId)}"]`):power)?.focus({preventScroll:true});}
     else if(detailId)grid.querySelector(`[data-device-detail="${CSS.escape(detailId)}"]`)?.focus({preventScroll:true});

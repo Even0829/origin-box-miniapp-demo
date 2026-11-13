@@ -1,6 +1,5 @@
 import {conversationSeeds,attachmentSamples} from './conversation-data.js';
 import {previewNow,previewDate} from './preview-clock.js';
-import {parseMemoryInstruction,memoryCorrectionSamples} from './memory-assistant.js?v=memory-chat-20261016';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const clean=value=>String(value??'').replace(/[。．.]+$/u,'');
@@ -23,7 +22,7 @@ const glyphs={
 const chatIcon=name=>'<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(glyphs[name]??glyphs.file)+'</svg>';
 const actionIcon=name=>name==='voice'?'<span class="asset chat-action-wave"><img src="assets/voice.svg" alt=""></span>':'<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="url(#chat-action-gradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="chat-action-gradient" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse"><stop stop-color="#007aff"/><stop offset="1" stop-color="#f96222"/></linearGradient></defs>'+glyphs[name].replace('fill="currentColor"','fill="url(#chat-action-gradient)"')+'</svg>';
 
-export function createConversation({icon,setView,onHome,openSheet,toast,getRooms,getLampLevel,getLampDevice,onRecord,onDevice,startAir,cancelAir}){
+export function createConversation({seedConversations=true,icon,setView,onHome,openSheet,toast,getRooms,getLampLevel,getLampDevice,onRecord,onDevice,startAir,cancelAir,memoryDialogue}){
   const $=s=>document.querySelector(s);
   const page=document.createElement('section');
   page.id='chat-page';page.className='chat-page';page.hidden=true;page.setAttribute('aria-labelledby','chat-title');
@@ -42,7 +41,8 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
   historyDrawer.innerHTML='<button class="chat-history-scrim" id="chat-history-scrim" aria-label="返回会话" tabindex="-1"></button><aside class="chat-history-panel"><div class="chat-history-tools"><label class="chat-history-search">'+chatIcon('search')+'<input id="chat-history-search" type="search" placeholder="搜索会话" aria-label="搜索会话" maxlength="100" autocomplete="off"><button type="button" id="chat-history-clear" aria-label="清空搜索" hidden>'+icon('close')+'</button></label><button class="chat-history-close" id="chat-history-close" aria-label="关闭历史会话" autofocus>'+icon('close')+'</button></div><div class="chat-history-scroll" id="chat-history-results" aria-label="会话标题列表"></div><div class="chat-history-context" id="chat-history-context" role="menu" aria-label="会话操作" hidden><button role="menuitem" data-history-action="rename">'+icon('edit')+'<span>重命名</span></button><button role="menuitem" class="danger" data-history-action="delete">'+icon('trash')+'<span>删除</span></button></div></aside><span class="home-indicator" aria-hidden="true"></span>';
   $('#app').append(historyDrawer);
   const flow=$('#chat-flow'),input=$('#chat-input');
-  const conversations=structuredClone(conversationSeeds).map(s=>({...s,updatedAt:Date.parse(s.date+'T'+s.time+':00+08:00'),messages:s.messages.map(m=>({...m,historical:true})),draft:'',attachments:[],scroll:0,busy:null}));
+  const memoryToolbar=document.createElement('div');memoryToolbar.className='chat-memory-toolbar';memoryToolbar.hidden=true;page.insertBefore(memoryToolbar,flow);
+  const conversations=structuredClone(seedConversations?conversationSeeds:[]).map(s=>({...s,updatedAt:Date.parse(s.date+'T'+s.time+':00+08:00'),messages:s.messages.map(m=>({...m,historical:true})),draft:'',attachments:[],scroll:0,busy:null}));
   let activeId=null,readerOrigin=null,readerBody='',voiceText='',voiceDraft='',voiceTimer=null,voiceVersion=0,memorySession=null;
   const airBindings=new Map();
   const serviceSessions=new Map();
@@ -54,7 +54,7 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
     const s={id:uid(),title:'新的会话',date:day,time:clock(),updatedAt:previewNow(),scope:'personal',messages:[],draft:'',attachments:[],scroll:0,busy:null};
     conversations.unshift(s);activeId=s.id;return s;
   }
-  function saveDraft(){const s=current();if(s){s.draft=input.value;s.scroll=flow.scrollTop;}}
+  function saveDraft(){const s=current();if(s){s.draft=input.value;s.scroll=flow.scrollTop;if(s.kind==='memory')memoryDialogue.checkpoint(s);}}
   function open(kind){
     $('#chat-back').setAttribute('aria-label','返回首页');
     if(memorySession)discardMemory();else saveDraft();if(!current())makeConversation();setView('chat');page.hidden=false;
@@ -77,23 +77,33 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
     if(voice.open){cancelVoice();return;}
     if(historyDrawer.open){if(!$('#chat-history-context').hidden)hideHistoryMenu(true);else closeHistory();return;}
     if(!$('#chat-reader').hidden){closeReader();return;}
-    if(memorySession){const onReturn=memorySession.memory.onReturn;discardMemory();if(onReturn)onReturn();else onHome();return;}
+    if(memorySession){const s=memorySession,{onReturn,onDetail,wasNew}=s.memory,id=s.memoryId;discardMemory();if(wasNew&&id&&onDetail)onDetail(id);else if(onReturn)onReturn();else onHome();return;}
     saveDraft();onHome();
   }
   function discardMemory(){
     const s=memorySession;if(!s)return;
-    if(voice.open)cancelVoice();stop(s);memorySession=null;activeId=s.previousId;
+    if(voice.open)cancelVoice();s.draft=input.value;s.scroll=flow.scrollTop;stop(s);memoryDialogue.checkpoint(s);memorySession=null;activeId=s.previousId;
     delete page.dataset.kind;
     if(current()){renderFlow();renderComposer();flow.scrollTop=current().scroll??0;}else{input.value='';$('#chat-new').hidden=false;$('#chat-history').hidden=false;$('#chat-add').hidden=false;input.maxLength=2000;}
   }
-  function openMemoryCorrection({item,onConfirm,onReturn,today=previewDate}){
-    if(!item?.id){toast('请先打开要纠正的记忆');return;}
+  function openMemoryCorrection({item,onReturn,onDetail,fresh=false}={}) {
     if(memorySession)discardMemory();else saveDraft();
-    const previousId=activeId;
-    const s={id:'memory-'+uid(),kind:'memory',previousId,title:'纠正记忆',date:day,time:clock(),updatedAt:previewNow(),scope:'personal',messages:[],draft:'',attachments:[],scroll:0,busy:null,memory:{item:structuredClone(item),onConfirm,onReturn,today,pending:null,pendingMessageId:null}};
-    s.messages.push({id:uid(),role:'assistant',text:'想怎么调整这条记忆？',time:clock(),blocks:[]});
+    const previousId=activeId,session=memoryDialogue.open(item?.id || null,{fresh});
+    if(!session){toast('这条记忆已不可用');return;}
+    const s=session;
+    Object.assign(s,{kind:'memory',previousId,title:item?'关于这条记忆':'记下一件事',attachments:[],busy:null,memory:{onReturn,onDetail,wasNew:!item}});
+    if(!s.messages.length)s.messages.push({id:uid(),role:'assistant',text:item?'想补充或纠正什么，都可以接着告诉我。':'有什么希望我记住的？',time:clock(),at:memoryDialogue.now(),intro:true,blocks:[]});
     memorySession=s;activeId=s.id;page.dataset.kind='memory';$('#chat-reader').hidden=true;
-    setView('chat');page.hidden=false;renderFlow();renderComposer();flow.scrollTop=0;$('#chat-back').focus({preventScroll:true});window.scrollTo(0,0);
+    setView('chat');page.hidden=false;renderFlow();renderComposer();flow.scrollTop=s.scroll || 0;$('#chat-back').focus({preventScroll:true});window.scrollTo(0,0);memoryDialogue.checkpoint(s);
+  }
+  function showMemoryDetail(){
+    const s=memorySession;if(!s?.memoryId)return;
+    const id=s.memoryId,onDetail=s.memory.onDetail;discardMemory();onDetail?.(id);
+  }
+  function startAnotherMemory(){
+    const s=memorySession;if(!s||s.busy)return;
+    const {onReturn,onDetail}=s.memory;
+    openMemoryCorrection({onReturn,onDetail,fresh:true});
   }
   function attachmentMarkup(a,button=true){
     const content=(a.type==='image'&&a.src?'<img src="'+esc(a.src)+'" alt="'+esc(a.name)+'">':chatIcon(a.type==='image'?'image':'file'))
@@ -107,10 +117,10 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
     return '<div class="chat-chart"><div><span>'+esc(b.chartTitle??'CO₂变化')+'</span><strong>'+esc(values.at(-1))+' <small>'+esc(b.chartUnit??'ppm')+'</small></strong></div><svg viewBox="0 0 276 62" role="img" aria-label="'+esc(values.join('、')+(b.chartUnit??'ppm'))+'"><path d="M8 54h260" stroke="#d6e2ef" fill="none"/><polyline points="'+points+'" fill="none" stroke="#4a91c9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg><p><span>'+esc(b.chartLabels?.[0]??'调整前')+'</span><span>'+esc(b.chartLabels?.at(-1)??'最近一次')+'</span></p></div>';
   }
   function blockMarkup(b,m){
-    if(b.type==='memory-actions'){
-      if(b.returnToDetail)return '<div class="chat-memory-actions"><button class="chat-memory-button" data-memory-return="true">返回详情 '+icon('chevron')+'</button></div>';
-      const enabled=memorySession?.memory.pendingMessageId===m.id&&!memorySession.busy;
-      return '<div class="chat-memory-actions"><button class="chat-memory-button" data-reply="确认" '+(enabled?'':'disabled ')+'>确认</button><button class="chat-memory-button" data-reply="取消这次调整" '+(enabled?'':'disabled ')+'>先不调整</button></div>';
+    if(b.type==='memory-result')return '<div class="chat-memory-actions"><button class="chat-memory-button" data-memory-detail="true">查看记忆 '+icon('chevron')+'</button></div>';
+    if(b.type==='memory-undo'){
+      const current=memoryDialogue.item(memorySession),enabled=!memorySession?.busy&&memorySession?.undo?.id===b.undoId&&(current?.revision||0)===memorySession?.undo?.revision;
+      return '<div class="chat-memory-undo"><button data-memory-undo="'+esc(b.undoId)+'" '+(enabled?'':'disabled')+'>撤销本次更新</button></div>';
     }
     if(b.type==='device')return '<button class="chat-device" data-block="'+esc(b.id)+'" data-message="'+m.id+'"><img src="'+esc(b.image)+'" alt="'+esc(b.name)+'"><span class="chat-device-copy"><span class="chat-device-heading"><strong>'+esc(b.name)+'</strong><small>'+esc(b.status)+'</small></span><span class="chat-device-summary">'+esc(b.summary)+'</span>'+(typeof b.level==='number'?'<span class="chat-device-data"><span class="chat-meter"><i style="width:'+Math.max(0,Math.min(100,b.level))+'%"></i></span><b>'+esc(b.value)+'</b></span>':'')+'</span></button>'+chartMarkup(b);
     if(b.type==='artifact')return '<button class="chat-artifact" data-block="'+esc(b.id)+'" data-message="'+m.id+'"><span class="chat-artifact-kind">'+chatIcon(b.kind==='日程安排'?'schedule':'file')+esc(b.kind??'文稿')+'</span><strong>'+esc(b.title)+'</strong><span class="chat-artifact-summary">'+esc(b.summary)+'</span><span class="chat-artifact-footer"><span>第 '+(b.version??1)+' 版</span><span>打开查看 '+icon('chevron')+'</span></span></button>';
@@ -120,6 +130,7 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
   }
   function messageMarkup(m){
     return '<article class="chat-message" data-role="'+m.role+'" data-message="'+m.id+'">'
+      +(m.role==='user'&&memorySession?'<div class="chat-memory-user-meta"><span>'+esc(m.actorName || '你')+'</span><time>'+esc(m.at?new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Shanghai'}).format(m.at):m.time || '')+'</time></div>':'')
       +(m.role==='assistant'?'<div class="chat-author"><span class="asset"><img src="assets/consciousness.svg" alt=""></span><span>小元</span><time>'+esc(m.time??'')+'</time></div>':'')
       +(m.attachments?.length?'<div class="chat-message-attachments">'+m.attachments.map(a=>attachmentMarkup(a)).join('')+'</div>':'')
       +'<p class="chat-message-text">'+esc(m.text)+'</p>'
@@ -130,10 +141,13 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
   function updateHeader(s){
     const memory=s.kind==='memory';
     page.dataset.kind=memory?'memory':'general';
-    $('#chat-new').hidden=memory;$('#chat-history').hidden=memory;$('#chat-add').hidden=memory;
-    $('#chat-back').setAttribute('aria-label',memory?'返回记忆详情':'返回首页');
+    $('#chat-new').hidden=false;$('#chat-new').setAttribute('aria-label',memory?'记下另一件事':'新会话');$('#chat-history').hidden=memory;$('#chat-add').hidden=memory;
+    $('#chat-back').setAttribute('aria-label',memory?(s.memoryId?'返回记忆详情':'返回记忆列表'):'返回首页');
     input.maxLength=memory?300:2000;
-    input.placeholder=memory?'告诉小元，想怎么调整':'告诉小元，你想做什么';
+    input.placeholder=memory?(s.memoryId?'补充或纠正，直接告诉小元':'告诉小元，希望记住什么'):'告诉小元，你想做什么';
+    const memoryItem=memory?memoryDialogue.item(s):null;
+    memoryToolbar.hidden=!memoryItem;
+    if(memoryItem){const html='<span class="chat-memory-scope-label">'+(memoryItem.visibility==='family'?'家庭共享':'个人记忆')+'</span><span>这段对话仅自己可见</span><button class="chat-memory-view" data-memory-detail="true">查看记忆</button>';if(memoryToolbar.innerHTML!==html)memoryToolbar.innerHTML=html;}
     const hasMessages=s.messages.length>0;
     $('#chat-title').textContent=hasMessages?s.title:'小元';
     $('#chat-title').title=hasMessages?s.title:'小元';
@@ -144,8 +158,8 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
     const s=current();if(!s)return;
     updateHeader(s);
     if(s.kind==='memory'){
-      const item=s.memory.item,state=!item.enabled?'已停用':item.expired?'已到期':'使用中';
-      flow.innerHTML='<section class="chat-memory-context"><span>正在纠正这条记忆</span><p>'+esc(item.text)+'</p><small>'+(item.visibility==='family'?'家庭共享':'仅自己')+' · '+state+'</small></section>'+s.messages.map(messageMarkup).join('');
+      const item=memoryDialogue.item(s),state=item?(!item.enabled?'已停用':item.expired?'已到期':'使用中'):'';
+      flow.innerHTML=(item?'<section class="chat-memory-context"><span>当前记住的事</span><p>'+esc(item.text)+'</p><small>'+(item.visibility==='family'?'家庭共享':'仅自己')+' · '+state+'</small></section>':'')+s.messages.map(messageMarkup).join('');
       $('#chat-new-content').hidden=true;return;
     }
     flow.innerHTML=s.messages.length?'<p class="chat-date-label">'+(s.date===day?'今天':esc(s.date))+' · 仅自己</p>'+s.messages.map(messageMarkup).join('')
@@ -310,15 +324,14 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
       writeRecord({experienceId:b.id,title:b.title,summary:b.summary,status:'已结束',state:'past',scope:'family',label:'结束关注',text:b.summary});$('#sheet').close();toast('这次关注已结束');
     });
   }
-  function append(s,m){s.messages.push(m);s.time=clock();s.date=day;s.updatedAt=previewNow();if(visible(s)){const scroll=flow.scrollTop,follow=nearBottom();if(s.messages.length===1)flow.innerHTML='<p class="chat-date-label">今天 · 仅自己</p>';flow.insertAdjacentHTML('beforeend',messageMarkup(m));flow.lastElementChild.dataset.new='true';updateHeader(s);renderComposer();flow.scrollTop=follow?flow.scrollHeight:scroll;if(!follow)$('#chat-new-content').hidden=false;}}
+  function append(s,m){if(s.kind==='memory'){m.at??=memoryDialogue.now();m.time=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false}).format(m.at);m.actorName??=m.role==='user'?memoryActorName():'小元';}s.messages.push(m);s.time=clock();s.date=day;s.updatedAt=previewNow();if(visible(s)){const scroll=flow.scrollTop,follow=nearBottom();if(s.messages.length===1)flow.innerHTML='<p class="chat-date-label">今天 · 仅自己</p>';flow.insertAdjacentHTML('beforeend',messageMarkup(m));flow.lastElementChild.dataset.new='true';updateHeader(s);renderComposer();flow.scrollTop=follow?flow.scrollHeight:scroll;if(!follow)$('#chat-new-content').hidden=false;}}
   function wait(run,ms){return new Promise(resolve=>{const timer=setTimeout(()=>{run.timers.delete(timer);resolve(!run.stopped);},ms);run.timers.set(timer,resolve);});}
   function stop(s=current()){
-    if(s?.kind==='memory'){s.memory.pending=null;s.memory.pendingMessageId=null;}
     const run=s?.busy;if(!run)return;run.stopped=true;
     for(const [timer,resolve] of run.timers){clearTimeout(timer);resolve(false);}run.timers.clear();
     run.message.processing=null;run.message.stopped=true;run.message.text=run.message.text||'先停在这里，你可以补充或重新调整';
     if(run.pendingDevice){run.message.blocks=[];writeRecord({experienceId:run.message.id,title:run.lampTitle??'客厅灯光的这次调整',summary:'已停止等待，设备结果尚未确认',status:'未确认',scope:'family',label:'停止等待反馈',text:'不把已发送的调整请求当成已完成'});}
-    s.busy=null;updateMessage(s,run.message);if(visible(s))renderComposer();
+    s.busy=null;updateMessage(s,run.message);if(s.kind==='memory'){memoryDialogue.checkpoint(s);}if(visible(s))renderComposer();
   }
   async function stream(s,run,text){
     if(run.stopped)throw new DOMException('Stopped','AbortError');run.message.processing=null;const chars=Array.from(clean(text));run.message.text='';
@@ -326,38 +339,18 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
     for(let i=0;i<chars.length;i+=5){if(run.stopped)throw new DOMException('Stopped','AbortError');run.message.text=chars.slice(0,i+5).join('');updateMessage(s,run.message);if(!await wait(run,26))throw new DOMException('Stopped','AbortError');}return true;
   }
   function finish(s,run,blocks=[]){if(run.stopped)return;run.message.processing=null;run.message.blocks=blocks;run.message.resultNew=true;s.busy=null;updateMessage(s,run.message);if(visible(s))renderComposer();}
-  function memorySummary(plan){
-    const parts=plan.changes.map(change=>change.label==='记忆内容'?'把这条记忆改为“'+change.after+'”':change.label==='适用时间'?'把适用时间改为'+change.after:change.label==='适用空间'?'把适用空间改为'+change.after:change.label==='使用状态'?(plan.enabled?'恢复使用这条记忆':'暂时不再使用这条记忆'):'把这条理解标为已明确');
-    if(!plan.next.enabled&&!plan.changes.some(change=>change.label==='使用状态'))parts.push('继续保持停用');
-    return '我会'+parts.join('；')+'。这样调整可以吗？';
-  }
-  async function replyMemory(s,text){
-    const memory=s.memory,pending=memory.pending;
-    memory.pending=null;memory.pendingMessageId=null;
+  function memoryActorName(){return memoryDialogue.actorName?.() || '你';}
+  async function replyMemory(s,text,undoId=null){
+    const baseline=memoryDialogue.version(memoryDialogue.item(s));
     const m={id:uid(),role:'assistant',text:'',time:clock(),processing:'正在理解你的意思',blocks:[]};
-    const run={message:m,timers:new Map(),stopped:false};s.busy=run;renderFlow();append(s,m);
-    if(!await wait(run,650)||memorySession!==s)return;
-    const instruction=String(text).trim().replace(/[。！!？?]+$/u,'');
-    if(/^(?:取消|先不改|先不调整|不改了|算了|取消这次调整|不用改了)$/u.test(instruction)){
-      await stream(s,run,'好，先不调整，详情里的内容保持原样');finish(s,run);return;
-    }
-    if(/^(?:确认|可以|是的|就这样|好的|好|没问题|确认[，,]?就这样|可以[，,]?就这样)$/u.test(instruction)){
-      if(!pending){await stream(s,run,'还没有待确认的调整。你想把这条记忆改成什么？');finish(s,run);return;}
-      await stream(s,run,'好，我来按刚才的理解调整');
-      if(run.stopped||memorySession!==s)return;
-      const next=memory.onConfirm?.(pending);
-      if(next===false||!memory.onConfirm){m.text='这次还没有填入详情，你可以返回检查后再试';finish(s,run);return;}
-      memory.item=structuredClone(next&&typeof next==='object'?next:pending.next);
-      if(pending.patch.text!==undefined||pending.patch.confirmUnderstanding)memory.item.understanding='clear';
-      m.text='已填入详情，保存后生效';renderFlow();finish(s,run,[{type:'memory-actions',returnToDetail:true}]);return;
-    }
-    const normalized=instruction.replace(/^(?:不对|不是|不|等等)[，,：:]\s*/u,'');
-    const plan=parseMemoryInstruction(normalized,memory.item,{today:memory.today,rooms:getRooms()});
-    if(!plan.ok){await stream(s,run,plan.message);finish(s,run);return;}
-    await stream(s,run,memorySummary(plan));
-    if(run.stopped||memorySession!==s)return;
-    memory.pending=plan;memory.pendingMessageId=m.id;
-    finish(s,run,[{type:'memory-actions'}]);
+    const run={message:m,timers:new Map(),stopped:false};s.busy=run;renderFlow();append(s,m);memoryDialogue.checkpoint(s);
+    if(!await wait(run,550)||memorySession!==s)return;
+    m.processing='正在整理记忆';updateMessage(s,m);
+    if(!await wait(run,400)||memorySession!==s)return;
+    if(undoId)memoryDialogue.undo(s,undoId,m);else memoryDialogue.respond(s,text,m,baseline);
+    finish(s,run,m.blocks || []);
+    if(visible(s)){const top=flow.scrollTop,follow=nearBottom();s.title=s.memoryId?'关于这条记忆':'记下一件事';renderFlow();renderComposer();flow.scrollTop=follow?flow.scrollHeight:top;}
+    memoryDialogue.checkpoint(s);
   }
   async function reply(s,text,files){
     const m={id:uid(),role:'assistant',text:'',time:clock(),processing:files.length?'正在读取资料':'正在理解你的请求',blocks:[]};
@@ -471,7 +464,7 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
   }
   function openVoice(){
     saveDraft();voiceText='';voiceDraft=input.value;voiceVersion++;$('#chat-voice-transcript').textContent='';$('#chat-voice-caption').textContent='正在听，点击下方结束';
-    const s=current(),samples=s?.kind==='memory'?(s.memory.pending?['确认，就这样',...memoryCorrectionSamples(s.memory.item).slice(0,2)]:memoryCorrectionSamples(s.memory.item)):['把客厅灯调到60%','帮我安排明天的事情','把这份资料整理成要点'];
+    const s=current(),samples=s?.kind==='memory'?memoryDialogue.samples(s):['把客厅灯调到60%','帮我安排明天的事情','把这份资料整理成要点'];
     $('#chat-voice-samples').innerHTML='<span>也可以这样说</span>'+samples.map(text=>'<button data-utterance="'+esc(text)+'">'+esc(text)+'</button>').join('');
     voice.dataset.phase='listening';voice.style.setProperty('--frame-top',$('#app').getBoundingClientRect().top+'px');voice.showModal();$('#chat-voice-end').focus({preventScroll:true});
   }
@@ -488,13 +481,14 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
   voice.addEventListener('cancel',e=>{e.preventDefault();cancelVoice();});
   voice.addEventListener('click',e=>{if(e.target===voice||e.target.classList.contains('chat-voice-surface'))cancelVoice();});
   $('#chat-voice-cancel').onclick=cancelVoice;$('#chat-voice-end').onclick=endVoice;
-  $('#chat-back').onclick=back;$('#chat-new').onclick=newConversation;$('#chat-history').onclick=openHistory;$('#chat-add').onclick=openLibrary;$('#chat-action').onclick=()=>{const mode=$('#chat-action').dataset.mode;if(mode==='voice')openVoice();else if(mode==='stop')stop();else submit();};
+  $('#chat-back').onclick=back;$('#chat-new').onclick=()=>memorySession?startAnotherMemory():newConversation();$('#chat-history').onclick=openHistory;$('#chat-add').onclick=openLibrary;$('#chat-action').onclick=()=>{const mode=$('#chat-action').dataset.mode;if(mode==='voice')openVoice();else if(mode==='stop')stop();else submit();};
   $('#chat-form').onsubmit=e=>{e.preventDefault();submit();};
-  input.oninput=()=>{current().draft=input.value;updateComposerAction();resizeInput();};
+  input.oninput=()=>{current().draft=input.value;if(current().kind==='memory')memoryDialogue.checkpoint(current());updateComposerAction();resizeInput();};
   input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();submit();}};
   page.addEventListener('click',e=>{
     const button=e.target.closest('button');if(!button)return;
-    if(button.dataset.memoryReturn){back();return;}
+    if(button.dataset.memoryDetail){showMemoryDetail();return;}
+    if(button.dataset.memoryUndo){const s=current();if(s.busy)return;append(s,{id:uid(),role:'user',text:'撤销本次更新',time:clock()});replyMemory(s,'撤销本次更新',button.dataset.memoryUndo);return;}
     if(button.dataset.reply){submit(button.dataset.reply);return;}
     if(button.dataset.library){current().draft='把这份资料整理成要点';renderComposer();openLibrary();return;}
     if(button.dataset.remove){current().attachments=current().attachments.filter(a=>a.id!==button.dataset.remove);renderComposer();return;}
@@ -522,5 +516,6 @@ export function createConversation({icon,setView,onHome,openSheet,toast,getRooms
       updateMessage(session,message);
     }
   }
+  window.addEventListener('pagehide',saveDraft);
   return {open,openService,openMemoryCorrection,back,updateAir,onViewChange:()=>{page.hidden=$('#app').dataset.view!=='chat';if(page.hidden){saveDraft();if(voice.open)cancelVoice();if(historyDrawer.open)closeHistory(false);if(memorySession)discardMemory();}}};
 }

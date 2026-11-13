@@ -20,7 +20,7 @@ const basePolicy = () => ({ focusIds: null, priorityDeviceIds: [], protectIds: [
 const mergePolicy = (policy, patch = {}) => ({ ...clone(policy), ...clone(patch) });
 
 /** Shared local data and a small intent model demonstrate the care loop. */
-export function createHomeScenarios({ container, store, getRooms = () => [], getPeople = () => [], getMemories = () => [], onRemember, openSheet, toast, onService, onRecord, onServiceDetail } = {}) {
+export function createHomeScenarios({ seedInsights = true, container, store, getRooms = () => [], getPeople = () => [], getMemories = () => [], onRemember, openSheet, toast, onService, onRecord, onServiceDetail } = {}) {
   const doc = container.ownerDocument, sheet = doc.querySelector('#sheet');
   const insights = createScenarioInsights({ sheet, getMemories });
   const jobs = new Map(), preferences = new Map(), timers = new Set();
@@ -552,7 +552,8 @@ export function createHomeScenarios({ container, store, getRooms = () => [], get
     for (const example of scenarioInsightExamples) {
       if (destroyed || (example.personId && !people().some(person => person.id === example.personId))) continue;
       let result;
-      try { result = await onRemember?.({ text: example.text, subject: example.personId ? personName(example.personId) : '家庭共同安排', context: def(example.scenarioId).title, roomId: null, origin: 'scenario', evidenceText: example.source }); }
+      const existing = getMemories().find(memory => memory.visibility === 'family' && memory.context === def(example.scenarioId).title && memory.evidence?.some(entry => entry.text === example.source));
+      try { result = existing ? {ok:true,id:existing.id,item:existing} : await onRemember?.({ text: example.text, subject: example.personId ? personName(example.personId) : '家庭共同安排', context: def(example.scenarioId).title, roomId: null, origin: 'scenario', evidenceText: example.source }); }
       catch { continue; }
       if (!result?.ok || destroyed) continue;
       preferences.set(prefKey(example.scenarioId, example.personId || ''), { memoryId: result.id, patch: clone(example.patch), text: example.text, storedText: result.item.text });
@@ -594,6 +595,6 @@ export function createHomeScenarios({ container, store, getRooms = () => [], get
       }
     }
   }, 1000);
-  container.addEventListener('click', click); renderEntrances(); seedInsightExamples();
+  container.addEventListener('click', click); renderEntrances(); if(seedInsights)seedInsightExamples();
   return { refresh, open, get(id) { const job = jobs.get(id) || [...jobs.values()].find(item => item.id === id); return job && serviceData(job); }, getActive() { return [...jobs.values()].filter(active).map(serviceData); }, destroy() { destroyed = true; insights.destroy(); unsubscribe(); clearInterval(tick); timers.forEach(clearTimeout); container.removeEventListener('click', click); } };
 }

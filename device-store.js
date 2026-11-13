@@ -11,8 +11,8 @@ function createSeed(stamp) {
   const sensor = (device) => ({ online: true, pending: null, readings: [], inputCapabilities: [], responseCapabilities: [], permissions: { read: true, control: false }, ...device });
   const control = (device) => ({ online: true, pending: null, readings: [], inputCapabilities: [], responseCapabilities: [], permissions: { read: true, control: true }, ...device });
   return [
-    sensor({ id: 'living-radar', roomId: 'living', name: '射频在场传感器', source: '涂鸦', type: 'presence', image: 'assets/device-radar.png', inputCapabilities: ['在场'], readings: [reading('presence', '在场', true, '', '检测到人在场')] }),
-    sensor({ id: 'living-camera', roomId: 'living', name: '视觉在场传感器', source: '涂鸦', type: 'presence', image: 'assets/device-camera.png', inputCapabilities: ['在场'], readings: [reading('presence', '在场', true, '', '检测到人在场')] }),
+    sensor({ id: 'living-radar', roomId: 'living', name: '客厅毫米波雷达', source: '涂鸦', type: 'presence', image: 'assets/device-radar.png', inputCapabilities: ['在场', '姿态', '活动强度'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('posture', '姿态', '坐姿'), reading('motion', '活动强度', '轻微活动')] }),
+    sensor({ id: 'living-camera', roomId: 'living', name: '客厅摄像头', source: '涂鸦', type: 'presence', image: 'assets/device-camera.png', inputCapabilities: ['在场', '人脸', '行为活动'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('behavior', '行为活动', '看电视')] }),
     control({ id: 'living-air', roomId: 'living', name: '空气置地机', source: '涂鸦', type: 'air', image: 'assets/device-air.png', power: true, mode: '低噪', modeOptions: ['自动', '标准', '低噪'], responseCapabilities: ['净化', '净化模式'] }),
     control({ id: 'living-ac', roomId: 'living', name: '客厅空调', source: '米家', type: 'climate', image: 'assets/device-ac.png', power: true, targetTemperature: 24, targetTemperatureMin: 16, targetTemperatureMax: 30, targetTemperatureStep: 1, temperatureModes: ['制冷', '制热', '自动'], mode: '制冷', modeOptions: ['制冷', '制热', '自动', '除湿', '送风'], fanMode: '自动', fanModeOptions: ['自动', '低风', '中风', '高风'], swingMode: '关闭', swingModeOptions: ['关闭', '上下', '左右', '全向'], inputCapabilities: ['温度'], responseCapabilities: ['制冷', '制热', '温度调节', '模式', '风速', '扫风'], readings: [reading('temperature', '室内温度', 25, '℃')] }),
     control({ id: 'living-lamp', roomId: 'living', name: '客厅主灯', source: '米家', type: 'light', image: 'assets/device-pendant.png', power: true, level: 35, responseCapabilities: ['照明', '亮度'] }),
@@ -20,7 +20,11 @@ function createSeed(stamp) {
     control({ id: 'master-left', roomId: 'master', name: '主卧左灯', source: '米家', type: 'light', image: 'assets/lamp-device.png', power: true, level: 30, responseCapabilities: ['照明', '亮度'] }),
     control({ id: 'master-right', roomId: 'master', name: '主卧右灯', source: '涂鸦', type: 'light', image: 'assets/lamp-device.png', power: true, level: 60, responseCapabilities: ['照明', '亮度'] }),
     sensor({ id: 'master-environment', roomId: 'master', name: '温湿度传感器', source: '米家', type: 'environment', image: 'assets/device-temperature.png', inputCapabilities: ['温湿度'], readings: [reading('temperature', '温度', 24, '℃'), reading('humidity', '湿度', 51, '%')] }),
-    sensor({ id: 'master-presence', roomId: 'master', name: '在场传感器', source: '涂鸦', type: 'presence', image: 'assets/device-radar.png', inputCapabilities: ['在场'], readings: [reading('presence', '在场', true, '', '检测到人在场')] }),
+    sensor({ id: 'master-presence', roomId: 'master', name: '主卧毫米波雷达', source: '涂鸦', type: 'presence', image: 'assets/device-radar.png', inputCapabilities: ['在场', '姿态', '活动强度'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('posture', '姿态', '卧姿'), reading('motion', '活动强度', '暂无明显活动')] }),
+    sensor({ id: 'second-camera', roomId: 'second', name: '次卧摄像头', source: '涂鸦', type: 'presence', image: 'assets/device-camera.png', inputCapabilities: ['在场', '行为活动'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('behavior', '行为活动', '阅读')] }),
+    sensor({ id: 'bathroom-presence', roomId: 'bathroom', name: '卫生间毫米波雷达', source: '涂鸦', type: 'presence', image: 'assets/device-radar.png', online: false, inputCapabilities: ['在场'], readings: [reading('presence', '在场', null, '', '在场状态待更新')] }),
+    sensor({ id: 'kitchen-presence', roomId: 'kitchen', name: '厨房毫米波雷达', source: '涂鸦', type: 'presence', image: 'assets/device-radar.png', inputCapabilities: ['在场'], readings: [reading('presence', '在场', false, '', '未检测到人在场')] }),
+    sensor({ id: 'dining-camera', roomId: 'dining', name: '餐厅摄像头', source: '涂鸦', type: 'presence', image: 'assets/device-camera.png', inputCapabilities: ['在场', '行为活动'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('behavior', '行为活动', '用餐')] }),
     sensor({ id: 'second-environment', roomId: 'second', name: '温湿度传感器', source: '米家', type: 'environment', image: 'assets/device-temperature.png', inputCapabilities: ['温湿度'], readings: [reading('temperature', '温度', 25, '℃'), reading('humidity', '湿度', 46, '%')] }),
     sensor({ id: 'bathroom-humidity', roomId: 'bathroom', name: '温湿度传感器', source: '涂鸦', type: 'environment', image: 'assets/device-temperature.png', inputCapabilities: ['温湿度'], readings: [reading('temperature', '温度', 24, '℃'), reading('humidity', '湿度', 58, '%')] }),
     sensor({ id: 'kitchen-environment', roomId: 'kitchen', name: '温湿度传感器', source: '涂鸦', type: 'environment', image: 'assets/device-temperature.png', inputCapabilities: ['温湿度'], readings: [reading('temperature', '温度', 26, '℃'), reading('humidity', '湿度', 53, '%')] }),
@@ -33,12 +37,14 @@ function createSeed(stamp) {
   ];
 }
 
-export function createDeviceStore({ getRooms = () => DEFAULT_ROOMS, onChange, onRecord, onReceipt } = {}) {
+export function createDeviceStore({ seedMode = 'normal', initialDevices = null, offline = false, getRooms = () => DEFAULT_ROOMS, onChange, onRecord, onReceipt } = {}) {
   const seededAt = Date.now();
-  const devices = createSeed(seededAt).map((device) => ({
+  const devices = (initialDevices || createSeed(seededAt)).filter(device => (initialDevices || seedMode !== 'empty') && (seedMode !== 'starter' || ['living-lamp','living-environment'].includes(device.id))).map((device) => initialDevices ? {...device,pending:null} : ({
     ...device,
+    previewOnline: device.online,
+    online: offline ? false : device.online,
     controlRevision: 0,
-    updatedAt: device.online ? seededAt : seededAt - 25 * 60 * 1000,
+    updatedAt: !offline && device.online ? seededAt : seededAt - 25 * 60 * 1000,
     providerId: device.source === '米家' ? 'xiaomi' : 'tuya',
     accountId: device.source === '米家' ? 'mi-main' : 'ty-main',
     externalId: `cn:seed:${device.id}`,

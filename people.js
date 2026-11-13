@@ -10,7 +10,7 @@ const release = value => { if (blobURL(value)) URL.revokeObjectURL(value); };
 const wave = () => `<span class="pp-wave" aria-hidden="true">${[9, 19, 13, 25, 17, 29, 15, 23, 11].map(height => `<i style="--bar-height:${height}px"></i>`).join('')}</span>`;
 
 // Local profile maintenance only. Samples never enter chat, memory, or a recognition model.
-export function createPeoplePage({ page, setView, openSheet, toast, onBack, onChange = () => {}, onRecord = () => {} }) {
+export function createPeoplePage({ page, setView, openSheet, toast, onBack, onChange = () => {}, onRecord = () => {}, seedPeople = true, memberMode = false, inline = false, draftMode = false, releaseOnDestroy = true }) {
   const doc = page.ownerDocument, sheet = doc.querySelector('#sheet');
   const preview = new URLSearchParams(location.search).get('voice-preview') === '1';
   let people = [
@@ -18,6 +18,7 @@ export function createPeoplePage({ page, setView, openSheet, toast, onBack, onCh
     { id: 'person-mom', name: '妈妈', photo: 'assets/person-mom-photo.png', enabled: true, samples: [{ id: 'seed-mom-voice', url: VOICE_SAMPLE, duration: 5.88, preset: true }] },
     { id: 'person-dad', name: '爸爸', photo: '', enabled: false, samples: [] },
   ];
+  if(!seedPeople)people=[];
   let selected = 'person-mom', session = null, generation = 0, view = '', destroyed = false;
   let player = null, playing = null, playbackToken = 0, pageScroll = 0, validationTimer = null;
   let previewFailureShown = false;
@@ -27,8 +28,9 @@ export function createPeoplePage({ page, setView, openSheet, toast, onBack, onCh
   const current = () => find(selected);
   const focusTab = () => (page.querySelector('[role="tab"][aria-selected="true"]') || page.querySelector('[data-pp="add"]'))?.focus({ preventScroll: true });
   const liveURLs = () => new Set(people.flatMap(person => [person.photo, ...person.samples.map(sample => sample.url)]));
-  const notify = (person, label, text) => { onRecord({ scope: 'family', label, text: `${person.name} · ${text}` }); onChange(); };
+  const notify = (person, label, text) => { onRecord({ scope: 'family', label, text: `${person.name} · ${text}` }); onChange(people.map(p => structuredClone(p))); };
   page.classList.add('pp-page');
+  page.classList.toggle('pp-member-mode', memberMode);page.classList.toggle('pp-inline-member', inline);
 
   function stopPlayback() {
     playbackToken++;
@@ -59,9 +61,10 @@ export function createPeoplePage({ page, setView, openSheet, toast, onBack, onCh
     page.innerHTML = `<header class="pp-header"><button class="icon-button" data-pp="back" aria-label="返回我的">${glyph('back')}</button><h1>人物多源识别</h1><span></span></header><div class="pp-tabs-row"><div class="pp-tabs device-filters" role="tablist" aria-label="家庭人物">${people.map(p => `<button type="button" role="tab" id="pp-tab-${p.id}" aria-controls="pp-person-panel" aria-selected="${p.id === selected}" tabindex="${p.id === selected ? 0 : -1}" data-person="${p.id}" title="${esc(p.name)}">${esc(p.name)}</button>`).join('')}</div><button class="pp-add-person" data-pp="add">${glyph('plus')}<span>添加人物</span></button></div><main class="pp-scroll" id="pp-person-panel" role="tabpanel" ${person ? `aria-labelledby="pp-tab-${person.id}"` : 'aria-label="人物资料"'}>${person ? `
 
       <section class="pp-card pp-identity" aria-label="身份信息"><div class="pp-card-heading"><h3>身份信息</h3></div><div class="pp-name-row"><span>称呼</span><strong>${esc(person.name)}</strong><button class="pp-link" data-pp="rename">修改</button></div><label class="pp-use"><span><strong>用于人物识别</strong><small>${person.enabled ? '人脸与声纹资料共同使用' : '已暂停使用，资料仍保留'}</small></span><input type="checkbox" role="switch" data-pp-use aria-label="使用${esc(person.name)}的识别资料" ${person.enabled ? 'checked' : ''}><span class="pp-switch" aria-hidden="true"></span></label></section>
-      <section class="pp-card" aria-label="人脸资料"><div class="pp-card-heading"><h3>人脸资料</h3><span class="pp-source-state">${person.photo ? '照片已添加' : '未添加'}</span></div><div class="pp-face-body"><div class="pp-face-thumb${person.photo ? '' : ' is-empty'}">${person.photo ? `<img src="${esc(person.photo)}" alt="${esc(person.name)}的人脸资料照片">` : glyph('face')}</div><div class="pp-face-copy"><p>${person.photo ? '已保存人脸资料照片' : '添加一张清晰的正脸照片'}</p><span>${person.photo ? '可随时更换或移除照片' : '拍摄或从手机相册中选择'}</span><div class="pp-inline-actions"><button class="pp-soft-button" data-pp="face">${person.photo ? '更换照片' : '添加人脸'}</button>${person.photo ? '<button class="pp-link pp-muted-link" data-pp="remove-face">移除</button>' : ''}</div></div></div></section>
-      <section class="pp-card pp-voice-card" aria-label="声纹资料"><div class="pp-card-heading"><h3>声纹资料</h3><span class="pp-source-state">${person.samples.length ? '已录入' : '未录入'}</span></div>${person.samples.length ? `<div class="pp-audio-list">${sampleRows(person.samples)}</div><p class="pp-source-note">已保存一段声纹资料，用于后续身份识别</p><button class="pp-link pp-danger-text pp-voice-edit" data-pp="remove-voice">删除声纹</button>` : `<div class="pp-voice-empty"><p>让小元多一份认识你的依据</p><span class="pp-voice-hint">读一句话，约5～8秒</span><button class="pp-soft-button" data-pp="voice">添加声纹</button></div>`}</section>
+      <section class="pp-card" aria-label="人脸资料"><div class="pp-card-heading"><h3>人脸资料</h3><span class="pp-source-state">${person.photo ? '照片已添加' : '未添加'}</span></div><div class="pp-face-body"><div class="pp-face-thumb${person.photo ? '' : ' is-empty'}">${person.photo ? `<img src="${esc(person.photo)}" alt="${esc(person.name)}的人脸资料照片">` : glyph('face')}</div><div class="pp-face-copy"><p>${person.photo ? (draftMode ? '照片已添加，随成员资料保存' : '已保存人脸资料照片') : '添加一张清晰的正脸照片'}</p><span>${person.photo ? '可随时更换或移除照片' : '拍摄或从手机相册中选择'}</span><div class="pp-inline-actions"><button class="pp-soft-button" data-pp="face">${person.photo ? '更换照片' : '添加人脸'}</button>${person.photo ? '<button class="pp-link pp-muted-link" data-pp="remove-face">移除</button>' : ''}</div></div></div></section>
+      <section class="pp-card pp-voice-card" aria-label="声纹资料"><div class="pp-card-heading"><h3>声纹资料</h3><span class="pp-source-state">${person.samples.length ? '已录入' : '未录入'}</span></div>${person.samples.length ? `<div class="pp-audio-list">${sampleRows(person.samples)}</div><p class="pp-source-note">${draftMode ? '声纹已添加，随成员资料保存' : '已保存一段声纹资料，用于后续身份识别'}</p><button class="pp-link pp-danger-text pp-voice-edit" data-pp="remove-voice">删除声纹</button>` : `<div class="pp-voice-empty"><p>让小元多一份认识你的依据</p><span class="pp-voice-hint">读一句话，约5～8秒</span><button class="pp-soft-button" data-pp="voice">添加声纹</button></div>`}</section>
       <p class="pp-note">人物资料用于身份识别，录入不代表已识别到本人。</p><button class="pp-delete" data-pp="delete">删除人物资料</button>` : `<div class="pp-empty"><span class="pp-empty-icon">${glyph('face')}</span><h2>先添加一位家人</h2><p>填写称呼，再补充照片或声音</p><button class="pp-soft-button" data-pp="add">添加人物</button></div>`}</main><div class="pp-indicator" aria-hidden="true"></div>`;
+    if(memberMode)page.querySelector('h1').textContent = '人脸与声纹';
     page.querySelector('.pp-scroll').scrollTop = top;
     page.querySelector('.pp-tabs').scrollLeft = tabsLeft;
   }
@@ -115,7 +118,7 @@ export function createPeoplePage({ page, setView, openSheet, toast, onBack, onCh
       show(s.personId ? '修改称呼' : '添加人物', `<label class="form-label" for="pp-name">家里的称呼</label><input class="text-input" id="pp-name" value="${esc(s.name)}" maxlength="20" placeholder="例如：妈妈、小雨" autocomplete="off"><p class="pp-form-hint">用家里熟悉的称呼，之后可以修改</p><p class="form-error" id="pp-error" role="alert"></p><div class="dialog-actions"><button class="secondary-button" id="pp-cancel">取消</button><button class="primary-button" id="pp-save" disabled>${s.personId ? '保存' : '添加人物'}</button></div>`, 'name', '#pp-name');
       q('#pp-name').oninput = event => { s.name = event.target.value; error(''); updateSave(); };
     } else if (s.kind === 'face') {
-      show(s.basePhoto ? `更换${s.name}的人脸照片` : `为${s.name}添加人脸`, `<div class="pp-photo-preview${s.photo ? '' : ' is-empty'}">${s.photo ? `<img src="${esc(s.photo)}" alt="人脸资料照片预览">` : glyph('face')}</div><p class="pp-photo-hint">请选择清晰、无遮挡的单人正脸照片</p><div class="pp-photo-actions"><button class="pp-photo-choice" data-photo="camera">${glyph('camera')}拍摄照片</button><button class="pp-photo-choice" data-photo="album">${glyph('image')}从相册选择</button></div><input type="file" id="pp-camera" accept="image/*" capture="user" hidden><input type="file" id="pp-album" accept="image/*" hidden><p class="form-error" id="pp-error" role="alert">${s.loading ? '正在读取照片…' : ''}</p><div class="dialog-actions"><button class="secondary-button" id="pp-cancel">取消</button><button class="primary-button" id="pp-save" disabled>保存照片</button></div>`, 'face');
+      show(s.basePhoto ? `更换${s.name}的人脸照片` : `为${s.name}添加人脸`, `<div class="pp-photo-preview${s.photo ? '' : ' is-empty'}">${s.photo ? `<img src="${esc(s.photo)}" alt="人脸资料照片预览">` : glyph('face')}</div><p class="pp-photo-hint">请选择清晰、无遮挡的单人正脸照片</p><div class="pp-photo-actions"><button class="pp-photo-choice" data-photo="camera">${glyph('camera')}拍摄照片</button><button class="pp-photo-choice" data-photo="album">${glyph('image')}从相册选择</button></div><input type="file" id="pp-camera" accept="image/*" capture="user" hidden><input type="file" id="pp-album" accept="image/*" hidden><p class="form-error" id="pp-error" role="alert">${s.loading ? '正在读取照片…' : ''}</p><div class="dialog-actions"><button class="secondary-button" id="pp-cancel">取消</button><button class="primary-button" id="pp-save" disabled>${draftMode ? '添加照片' : '保存照片'}</button></div>`, 'face');
       sheet.querySelectorAll('[data-photo]').forEach(button => button.onclick = () => q(`#pp-${button.dataset.photo}`).click());
       ['camera', 'album'].forEach(kind => q(`#pp-${kind}`).onchange = event => readPhoto(event.target.files?.[0]));
     } else renderVoiceEditor();
@@ -125,11 +128,11 @@ export function createPeoplePage({ page, setView, openSheet, toast, onBack, onCh
   function renderVoiceEditor() {
     const s = session, active = s.stage === 'recording', requesting = s.stage === 'requesting';
     if (s.stage === 'validating') {
-      show('检查声纹资料', '<div class="pp-voice-check" role="status" aria-live="polite"><span class="pp-check-spinner" aria-hidden="true"></span><h3>正在检查录音…</h3><p>检查通过后，会自动保存声纹资料</p></div><div class="dialog-actions"><button class="secondary-button" id="pp-cancel">取消</button><button class="primary-button" id="pp-save" disabled>正在检查</button></div>', 'voice');
+      show('检查声纹资料', `<div class="pp-voice-check" role="status" aria-live="polite"><span class="pp-check-spinner" aria-hidden="true"></span><h3>正在检查录音…</h3><p>${draftMode ? '检查通过后，会加入待保存的成员资料' : '检查通过后，会自动保存声纹资料'}</p></div><div class="dialog-actions"><button class="secondary-button" id="pp-cancel">取消</button><button class="primary-button" id="pp-save" disabled>正在检查</button></div>`, 'voice');
       sheet.dataset.voiceStage = 'validating'; return;
     }
     delete sheet.dataset.voiceStage;
-    show(`添加${s.name}的声纹资料`, `<div class="pp-voice-guide"><span>用平常的声音，读一句话</span><p>${VOICE_READING}</p><small>约5～8秒，读完即可结束</small></div>${preview ? '<p class="pp-preview-note">朗读预览，不会开启麦克风</p>' : ''}<div class="pp-recorder ${active ? 'is-recording' : ''}" aria-label="录音区域"><div class="pp-record-wave">${wave()}</div><div class="pp-record-clock"><strong id="pp-elapsed">00:00</strong><span>最长30秒</span></div><button class="pp-record-button" id="pp-record" ${requesting ? 'disabled' : ''}>${glyph(active ? 'stop' : 'mic')}<span>${active ? '结束录音' : requesting ? '正在准备…' : s.samples.length ? '重新录制' : '开始录音'}</span></button><p id="pp-record-hint" role="status">${active ? '正在录音，读完后点击结束' : requesting ? '请允许使用麦克风' : esc(s.notice || '请由本人在安静环境下录入')}</p></div><div class="pp-draft-heading"><h3>语音资料</h3><span>${s.samples.length ? '已录好一段' : '尚未录入'}</span></div><div class="pp-draft-samples">${s.samples.length ? sampleRows(s.samples) : '<p class="pp-draft-empty">录好后可以试听，再决定是否保存</p>'}</div><p class="form-error" id="pp-error" role="alert"></p><div class="dialog-actions"><button class="secondary-button" id="pp-cancel">取消</button><button class="primary-button" id="pp-save" disabled>保存声纹</button></div>`, 'voice');
+    show(`添加${s.name}的声纹资料`, `<div class="pp-voice-guide"><span>用平常的声音，读一句话</span><p>${VOICE_READING}</p><small>约5～8秒，读完即可结束</small></div>${preview ? '<p class="pp-preview-note">朗读预览，不会开启麦克风</p>' : ''}<div class="pp-recorder ${active ? 'is-recording' : ''}" aria-label="录音区域"><div class="pp-record-wave">${wave()}</div><div class="pp-record-clock"><strong id="pp-elapsed">00:00</strong><span>最长30秒</span></div><button class="pp-record-button" id="pp-record" ${requesting ? 'disabled' : ''}>${glyph(active ? 'stop' : 'mic')}<span>${active ? '结束录音' : requesting ? '正在准备…' : s.samples.length ? '重新录制' : '开始录音'}</span></button><p id="pp-record-hint" role="status">${active ? '正在录音，读完后点击结束' : requesting ? '请允许使用麦克风' : esc(s.notice || '请由本人在安静环境下录入')}</p></div><div class="pp-draft-heading"><h3>语音资料</h3><span>${s.samples.length ? '已录好一段' : '尚未录入'}</span></div><div class="pp-draft-samples">${s.samples.length ? sampleRows(s.samples) : '<p class="pp-draft-empty">录好后可以试听，再决定是否保存</p>'}</div><p class="form-error" id="pp-error" role="alert"></p><div class="dialog-actions"><button class="secondary-button" id="pp-cancel">取消</button><button class="primary-button" id="pp-save" disabled>${draftMode ? '检查并添加' : '保存声纹'}</button></div>`, 'voice');
     q('#pp-record').onclick = () => active ? recorder.stop() : startRecording();
     sheet.querySelectorAll('[data-pp-play]').forEach(button => { button.disabled = active || requesting; button.onclick = () => { if (!recorder.active) playSample(s.samples.find(sample => sample.id === button.dataset.ppPlay), button); }; });
     sheet.querySelectorAll('[data-pp-replace]').forEach(button => { button.disabled = active || requesting; button.onclick = () => startRecording(button.dataset.ppReplace); });
@@ -197,11 +200,11 @@ export function createPeoplePage({ page, setView, openSheet, toast, onBack, onCh
         }
         person.samples = [{ ...sample, verification: 'local-preview' }];
         notify(person, '声纹资料已保存', '已通过本地预览检查并保存一段录音，真实声纹模型尚未接入');
-        closeEditor(); render(); focusTab(); toast('声纹资料已保存');
+        closeEditor(); render(); focusTab(); toast(draftMode ? '声纹已添加，保存成员后生效' : '声纹资料已保存');
       }, 1200);
       return;
     }
-    closeEditor(); render(); focusTab(); toast(s.kind === 'name' ? '人物信息已保存' : s.kind === 'face' ? '照片已保存' : '录音资料已保存');
+    closeEditor(); render(); focusTab(); toast(s.kind === 'name' ? '人物信息已保存' : s.kind === 'face' ? (draftMode ? '照片已添加，保存成员后生效' : '照片已保存') : '录音资料已保存');
   }
   function confirmAction(title, description, label, action) {
     stopPlayback();
@@ -212,6 +215,7 @@ export function createPeoplePage({ page, setView, openSheet, toast, onBack, onCh
     const tab = event.target.closest('[data-person]'); if (tab) { selectPerson(tab.dataset.person); return; }
     const play = event.target.closest('[data-pp-play]'); if (play) { const sample = current()?.samples.find(item => item.id === play.dataset.ppPlay); if (sample) playSample(sample, play); return; }
     const action = event.target.closest('[data-pp]')?.dataset.pp, person = current();
+    if(memberMode&&['add','rename','delete'].includes(action)){toast('请在成员档案中维护基本信息');return;}
     if (action === 'back') onBack();
     if (action === 'add') edit('add');
     if (action === 'rename') edit('name');
@@ -246,12 +250,15 @@ export function createPeoplePage({ page, setView, openSheet, toast, onBack, onCh
   doc.addEventListener('visibilitychange', onVisibility); window.addEventListener('pagehide', onPageHide); sheet.addEventListener('close', onSheetClose);
   render();
   return {
+    retainMedia() { releaseOnDestroy = false; },
+    setName(name) { const person=current(); if(person&&person.name!==name){person.name=name;if(!session)render();} },
+    openFor(member) { cleanup(); people=[{id:member.id,name:member.name,photo:member.photo||'',samples:structuredClone(member.samples||[]),enabled:member.enabled!==false}]; selected=member.id;setView('people');render({reset:true}); },
     open() { setView('people'); render(); page.querySelector('[data-pp="back"]').focus({ preventScroll: true }); },
     back: onBack,
     onViewChange(next) { if (view === 'people') pageScroll = page.querySelector('.pp-scroll')?.scrollTop || 0; if (next !== 'people') cleanup(); view = next; },
     getSummary() { return { total: people.length, enabled: people.filter(p => p.enabled).length }; },
     getRecognitionProfiles() { return people.map(({ id, name, photo, enabled, samples }) => ({ id, name, photo, enabled, sources: [photo ? 'face' : null, samples.length ? 'voice' : null].filter(Boolean) })); },
     getParticipants() { return people.map(({ id, name, enabled }) => ({ id, name, enabled })); },
-    destroy() { destroyed = true; cleanup(); recorder.destroy(); people.forEach(p => { release(p.photo); p.samples.forEach(sample => release(sample.url)); }); page.removeEventListener('click', onClick); page.removeEventListener('change', onChangeInput); page.removeEventListener('keydown', onKeydown); doc.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('pagehide', onPageHide); sheet.removeEventListener('close', onSheetClose); },
+    destroy() { destroyed = true; cleanup(); recorder.destroy(); if(releaseOnDestroy)people.forEach(p => { release(p.photo); p.samples.forEach(sample => release(sample.url)); }); page.removeEventListener('click', onClick); page.removeEventListener('change', onChangeInput); page.removeEventListener('keydown', onKeydown); doc.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('pagehide', onPageHide); sheet.removeEventListener('close', onSheetClose); },
   };
 }

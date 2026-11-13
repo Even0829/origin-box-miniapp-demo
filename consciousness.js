@@ -83,7 +83,7 @@ const seeds=[
   ]}
 ];
 
-export function createConsciousness({icon,openSheet,getRooms,onOpenAttention}){
+export function createConsciousness({seedMode='normal',icon,openSheet,getRooms,onOpenAttention}){
   const $=selector=>document.querySelector(selector);
   const host=$('#consciousness-content');
   const experiences=new Map(),logs=[],savedExpressions=new Set();
@@ -93,12 +93,12 @@ export function createConsciousness({icon,openSheet,getRooms,onOpenAttention}){
   const partHold=5000;
   const cardMarkup=new WeakMap();
   const snapshots=[];
-  for(const seed of seeds){
+  for(const seed of seeds.filter(item=>seedMode!=='empty'&&(seedMode!=='family'||item.scope!=='personal'))){
     const item={...seed,scope:seed.scope??'family',state:seed.state??'past',updatedAt:seed.entries.at(-1)[0]};
     delete item.entries;experiences.set(item.id,item);
     seed.entries.forEach(([at,label,text])=>logs.push({id:`seed-${serial++}`,experienceId:item.id,at,label,text,scope:item.scope}));
   }
-  logs.push({id:`seed-${serial++}`,experienceId:'offline-bedroom',at:at(0,17,52),label:'还在等待连接',text:'卧室空调离线，自动调温暂不可用。没有发出控制请求',scope:'family'});
+  if(seedMode!=='empty')logs.push({id:`seed-${serial++}`,experienceId:'offline-bedroom',at:at(0,17,52),label:'还在等待连接',text:'卧室空调离线，自动调温暂不可用。没有发出控制请求',scope:'family'});
   // Older current expressions provide an immediately browsable, grounded context.
   snapshots.push({id:'before-now-1',at:at(0,18,4),...idleExpressions[4],status:'持续感知',kind:'idle'},
     {id:'before-now-2',at:at(0,18,2),...idleExpressions[2],status:'回顾片刻',kind:'idle'});

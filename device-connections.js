@@ -6,7 +6,7 @@ const PROVIDERS = [
 ];
 const clone = (value) => structuredClone(value);
 
-export function createDeviceConnections({ store, getRooms }) {
+export function createDeviceConnections({ store, getRooms, seedAccounts = true }) {
   const accounts = [
     { id: 'mi-main', providerId: 'xiaomi', name: '小雨', identifier: '138****0829', status: 'connected', region: 'cn', app: 'mijia' },
     { id: 'mi-family', providerId: 'xiaomi', name: '家人的账号', identifier: '136****0921', status: 'connected', region: 'cn', app: 'mijia' },
@@ -14,6 +14,7 @@ export function createDeviceConnections({ store, getRooms }) {
     { id: 'ty-main', providerId: 'tuya', name: '小雨', identifier: '家庭账号 · 0829', status: 'connected', region: 'cn', app: 'smartlife', userCode: 'CN8Q7X9A' },
     { id: 'ty-previous', providerId: 'tuya', name: '旧的家庭账号', identifier: '家庭账号 · 0618', status: 'expired', region: 'cn', app: 'tuya', userCode: 'CN6H2M8B' },
   ];
+  if(!seedAccounts)accounts.length=0;
   const attempts = new Map();
   const byAccount = new Map();
   const reading = (key, label, value, unit) => ({ key, label, value, unit, text: `${value}${unit}`, updatedAt: Date.now() });

@@ -84,7 +84,6 @@ export function parseMemoryInstruction(instruction, item, { today, rooms = [] } 
   const next = { ...item, ...patch, enabled: enabled ?? item.enabled };
   next.expired = next.type === 'short' && next.expiresAt < today;
   if (enabled === true && next.expired) return fail('这条记忆已到期，请同时告诉我新的日期，例如“延到下周五，并恢复使用”');
-  if (Object.keys(patch).length && next.expired) return fail('这条记忆已到期，调整内容时也需要告诉我新的适用日期');
   const roomLabel = (id) => id == null ? '不限定空间' : rooms.find((entry) => entry.id === id)?.name || '原空间已移除';
   const changes = [];
   if (patch.text && patch.text !== item.text) changes.push({ label: '记忆内容', before: item.text, after: patch.text });

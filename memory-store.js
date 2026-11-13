@@ -1,4 +1,4 @@
-// 记忆为本次运行内的本地状态；记忆的适用范围不等同于执行许可。
+// 同源本地记忆；持久化由对话模块协调，适用范围不等同于执行许可。
 const TYPES = new Set(['short', 'long']);
 const VISIBILITIES = new Set(['personal', 'family']);
 const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -22,14 +22,16 @@ function formatDate(value) {
   return `${year}.${month}.${day}`;
 }
 
-export function createMemoryStore({ getRooms = () => [], now = () => Date.now(), onRecord = () => {} } = {}) {
+export function createMemoryStore({ seedMode = 'normal', getMemberId = null, initialRecords = null, personalSeeds = [], getRooms = () => [], now = () => Date.now(), onRecord = () => {} } = {}) {
   const stamp = () => Number(now());
   const today = () => dateAt(stamp());
   const listeners = new Set();
   const memories = [];
   let sequence = 0;
+  let transaction = null;
   const rooms = () => getRooms() || [];
-  const find = (id) => memories.find((item) => item.id === id);
+  const visible = item => !getMemberId || Boolean(getMemberId()) && (item.visibility === 'family' || item.ownerId === getMemberId());
+  const find = (id) => memories.find((item) => item.id === id && visible(item));
   const knownRoom = (id) => rooms().some((room) => room.id === id);
   const roomName = (id) => id === null ? '' : rooms().find((room) => room.id === id)?.name || '原空间已移除';
   const scopeText = (item) => [item.visibility === 'family' ? '家庭共享' : '仅自己', item.subject, item.roomId === null ? '' : roomName(item.roomId), item.context].filter(Boolean).join(' · ');
@@ -39,6 +41,8 @@ export function createMemoryStore({ getRooms = () => [], now = () => Date.now(),
     const expired = item.type === 'short' && isDate(item.expiresAt) && today() > item.expiresAt;
     return clone({
       ...item,
+      evidence:(item.evidence || []).filter(entry=>!getMemberId || !entry.privateOwnerId || entry.privateOwnerId===getMemberId()),
+      previous:(item.previous || []).filter(entry=>!getMemberId || !entry.privateOwnerId || entry.privateOwnerId===getMemberId()),
       expired,
       roomName: roomName(item.roomId),
       scopeText: scopeText(item),
@@ -67,32 +71,38 @@ export function createMemoryStore({ getRooms = () => [], now = () => Date.now(),
     // 已存在但被删除的空间可原样保留；不得悄悄绑定到同名或其他空间。
     if (roomId !== null && !knownRoom(roomId) && (!original || roomId !== original.roomId)) return fail('这个空间已不存在，请重新选择', 'roomId');
     if (type === 'short' && !isDate(expiresAt)) return fail('请设置有效的适用日期', 'expiresAt');
-    if (type === 'short' && expiresAt < today()) return fail('适用日期不能早于今天', 'expiresAt');
+    if (type === 'short' && expiresAt < today() && (!original || expiresAt !== original.expiresAt || type !== original.type)) return fail('适用日期不能早于今天', 'expiresAt');
     const defaultPeriodNote = type === 'short' ? '到期后不再作为当前协助的依据' : '持续适用，可随时调整';
     const periodNote = textOf('periodNote' in draft ? draft.periodNote : original && original.type === type ? original.periodNote : defaultPeriodNote);
     return { ok: true, value: { text, type, visibility, context, subject: subject || (visibility === 'family' ? '家庭共同安排' : '你'), roomId, expiresAt, periodNote } };
   }
 
   function changed(type, item, label, description) {
+    item.revision = (item.revision || 0) + 1;
     const event = { type, id: item.id, item: snapshot(item) };
-    onRecord({ scope: item.visibility, label, text: description });
-    for (const listener of listeners) listener(clone(event));
+    const notify = () => {
+      onRecord({ scope: item.visibility, label, text: description });
+      for (const listener of listeners) listener(clone(event));
+    };
+    if (transaction) transaction.push(notify); else notify();
     return { ok: true, id: item.id, item: snapshot(item) };
   }
 
   function create(draft) {
+    if(getMemberId&&!getMemberId())return fail('请先加入家庭');
     const normalized = normalize(draft);
     if (!normalized.ok) return normalized;
     const at = stamp();
     const value = normalized.value;
     const item = {
-      id: `memory-${at}-${++sequence}`,
+      id: `memory-${at}-${++sequence}-${crypto.randomUUID().slice(0,8)}`,
       ...value,
+      ...(getMemberId ? {ownerId:getMemberId()} : {}),
       understanding: draft.origin === 'scenario' && draft.understanding === 'checking' ? 'checking' : 'clear',
       enabled: typeof draft.enabled === 'boolean' ? draft.enabled : true,
       sourceLabel: draft.origin === 'scenario' ? '从照料中整理' : '你告诉我的',
       sourceDetail: draft.origin === 'scenario' ? '小元从有来源的场景补充中整理，推测的理解核对后再沿用' : '你在记忆中主动补充了这条内容',
-      evidence: [{ title: draft.origin === 'scenario' ? '场景照料中的补充' : '你补充的内容', text: draft.origin === 'scenario' ? textOf(draft.evidenceText) || value.text : value.text, at }],
+      evidence: [{ title: draft.origin === 'scenario' ? '场景照料中的补充' : '你补充的内容', text: textOf(draft.evidenceText) || value.text, at, ...(draft.privateEvidence && getMemberId ? {privateOwnerId:getMemberId()} : {}) }],
       help: value.visibility === 'family' ? '在相关家庭情境中理解共同安排，具体操作仍需遵循权限与指令' : '在与你相关的交流和任务中参考这条信息，保持仅自己可见的范围',
       previous: [],
       createdAt: at,
@@ -118,7 +128,7 @@ export function createMemoryStore({ getRooms = () => [], now = () => Date.now(),
       item.understanding = 'clear';
       item.sourceLabel = '你修正';
       item.sourceDetail = '你修正了记忆内容或适用情境';
-      item.evidence.unshift({ title: '你的修正', text: value.context ? `${value.text}（适用情境：${value.context}）` : value.text, at });
+      item.evidence.unshift({ title: '你的修正', text: textOf(draft.evidenceText) || (value.context ? `${value.text}（适用情境：${value.context}）` : value.text), at, ...(draft.privateEvidence && getMemberId ? {privateOwnerId:getMemberId()} : {}) });
     } else if (confirmation) {
       item.understanding = 'clear';
       item.sourceLabel = '你确认';
@@ -163,7 +173,7 @@ export function createMemoryStore({ getRooms = () => [], now = () => Date.now(),
       { id: 'memory-research-style', text: '整理资料时保留来源链接，把事实和建议分开', type: 'long', understanding: 'clear', visibility: 'personal', subject: '你', context: '资料整理与工作研究', help: '组织工作材料时保留查证路径，帮助你区分信息依据与行动建议', sourceLabel: '你告诉我的', evidenceText: '资料要能查到来源，建议单独列出来' },
       { id: 'memory-dinner-light', text: '准备晚餐时，厨房和餐厅的照明可以一起考虑', type: 'long', understanding: 'checking', enabled: false, visibility: 'family', subject: '家庭空间', roomId: seedRoom('kitchen'), context: '晚餐准备', help: '保留待核对的晚餐照明想法；停用期间不作为设备协同的依据', sourceLabel: '从交流中整理', evidenceText: '你曾在准备晚餐时一起提到厨房和餐厅的灯光' },
     ];
-    items.forEach((item, index) => {
+    items.filter(item=>seedMode!=='family'||item.visibility==='family').forEach((item, index) => {
       const updatedAt = at - (index + 1) * 3 * 60 * 60 * 1000;
       memories.push({
         roomId: null,
@@ -181,9 +191,59 @@ export function createMemoryStore({ getRooms = () => [], now = () => Date.now(),
     });
   }
 
-  seed();
+  if(initialRecords)memories.push(...clone(initialRecords));
+  else {
+    if(seedMode!=='empty')seed();
+    if(getMemberId)memories.forEach(item=>{if(item.visibility==='personal')item.ownerId=getMemberId();});
+    for(const item of personalSeeds)memories.push({type:'long',visibility:'personal',enabled:true,understanding:'clear',roomId:null,subject:'你',context:'日常交流',expiresAt:null,periodNote:'持续适用，可随时调整',sourceLabel:'从盒子交流中记住',sourceDetail:'来自本地预置的成员交流样例',evidence:[{title:'此前与小元的交流',text:item.text,at:stamp()-86400000}],help:'在与本人交流时参考，个人内容仅本人可见',previous:[],createdAt:stamp()-86400000,updatedAt:stamp()-3600000,...item});
+  }
   return {
-    getMemories: () => memories.map(snapshot).sort((a, b) => b.updatedAt - a.updatedAt),
+    reclassify(id, visibility) {
+      const item=find(id);
+      if(!item || !getMemberId || item.ownerId!==getMemberId())return fail('家庭现有约定会保留，可以为你单独记下一条偏好');
+      if(!VISIBILITIES.has(visibility))return fail('无法识别记忆归属');
+      if(item.visibility===visibility)return {ok:true,id,item:snapshot(item)};
+      if(item.visibility==='personal') {
+        for(const entry of [...item.evidence,...item.previous])entry.privateOwnerId ||= item.ownerId;
+      }
+      item.visibility=visibility;
+      item.subject=visibility==='family'?'家庭共同安排':'你';
+      item.sourceLabel='从交流中整理';
+      item.sourceDetail='根据明确的适用对象整理，相关私人交流仅本人可见';
+      item.help=visibility==='family'?'作为家庭共同安排的参考，实际操作仍遵循权限与指令':'仅在与你相关的交流和安排中参考';
+      item.updatedAt=stamp();
+      item.evidence.unshift({title:'记忆归属已调整',text:visibility==='family'?'已记为家庭共同约定':'已记为个人记忆，仅本人可见',at:item.updatedAt});
+      return changed('reclassified',item,'调整记忆归属',visibility==='family'?`已记为家庭共同约定：${item.text}`:'一条记忆已调整为个人记忆');
+    },
+    // Persist the memory and its conversation together before publishing any effects.
+    batch(action, persist) {
+      if (transaction) throw new Error('Nested memory transaction');
+      const before = clone(memories), oldSequence = sequence;
+      transaction = [];
+      let result, notices;
+      try {
+        result = action();
+        if (!result?.ok) { memories.splice(0, memories.length, ...before); sequence = oldSequence; transaction = null; return result; }
+        persist(); notices = transaction; transaction = null;
+      } catch (error) { memories.splice(0, memories.length, ...before); sequence = oldSequence; transaction = null; throw error; }
+      notices.forEach(notify => notify());
+      return result;
+    },
+    restore(id, previous, expectedRevision) {
+      const item = find(id);
+      if (!item || (item.revision || 0) !== expectedRevision) return fail('这条记忆有了新的调整，不能撤销旧版本，请直接说明要如何修改');
+      if (previous.ownerId !== item.ownerId || previous.visibility !== item.visibility && (!getMemberId || item.ownerId !== getMemberId())) return fail('无法改变记忆归属');
+      const beforeText = item.text, wasPrivate = item.visibility==='personal';
+      if(item.visibility==='personal'&&previous.visibility==='family')for(const entry of [...item.evidence,...item.previous])entry.privateOwnerId ||= item.ownerId;
+      for (const key of ['text','type','context','subject','roomId','expiresAt','periodNote','enabled','understanding','help','visibility']) item[key] = clone(previous[key]);
+      item.previous.unshift({text:beforeText,scopeText:scopeText(item),at:stamp(),...(wasPrivate ? {privateOwnerId:item.ownerId} : {})});
+      item.evidence.unshift({title:'撤销本次更新',text:`恢复为：${item.text}`,at:stamp()});
+      item.updatedAt = stamp();
+      return changed('restored', item, '撤销记忆更新', `已撤销本次更新：${item.text}`);
+    },
+    dumpForReview: () => clone(memories),
+    syncForReview(records){if(!Array.isArray(records))return;memories.splice(0,memories.length,...clone(records));listeners.forEach(fn=>fn({kind:'review-sync'}));},
+    getMemories: () => memories.filter(visible).map(snapshot).sort((a, b) => b.updatedAt - a.updatedAt),
     get: (id) => snapshot(find(id)),
     create,
     update,

@@ -237,6 +237,17 @@
 /* 记忆纠正复用原会话，只补当前记忆与回复操作。 */
 .chat-page[data-kind="memory"] .chat-header .icon-button{width:44px;height:44px}
 .chat-page[data-kind="memory"] .chat-input-tools{justify-content:flex-end}
+.chat-memory-toolbar{display:flex;align-items:center;gap:9px;flex-shrink:0;min-height:44px;margin:0 20px 8px;padding:0 0 8px;border-bottom:1px solid #cbd9e780}
+.chat-memory-toolbar>span{flex:1;min-width:0;color:#62788c;font-size:11px;line-height:19px}
+.chat-memory-view{flex-shrink:0;min-height:40px;color:#306b9b;font-size:12px}
+.chat-memory-user-meta{display:flex;justify-content:flex-end;gap:9px;margin-bottom:7px;color:#5c7489;font-size:11px;line-height:19px}
+.chat-memory-undo{margin-top:6px}
+.chat-memory-undo button{min-height:38px;color:#58758d;font-size:12px;text-decoration:underline;text-underline-offset:3px}
+.chat-memory-undo button:disabled{opacity:.45;text-decoration:none;cursor:default}
+.chat-memory-error{margin-top:8px;color:#a45146;font-size:12px;line-height:22px}
+.chat-page[data-kind="memory"] .chat-blocks{flex-direction:row;align-items:center;gap:16px;flex-wrap:wrap}
+.chat-page[data-kind="memory"] .chat-memory-actions,.chat-page[data-kind="memory"] .chat-memory-undo{margin-top:0}
+.chat-page[data-kind="memory"] .chat-author time{font-variant-numeric:tabular-nums}
 .chat-page[data-kind="memory"] .chat-memory-context{padding:12px 14px;margin:0 0 23px;border:1px solid #d8e4ef;border-radius:12px;background:#ffffff85}
 .chat-page[data-kind="memory"] .chat-memory-context>span{display:block;color:#5c7489;font-size:11px;line-height:19px}
 .chat-page[data-kind="memory"] .chat-memory-context>p{margin-top:6px;color:#344c61;font-size:13px;line-height:23px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -246,3 +257,4 @@
 .chat-page[data-kind="memory"] .chat-memory-button[data-reply="确认"]{border-color:var(--button-primary-bg);background:var(--button-primary-bg);color:var(--button-primary-text);font-weight:500}
 .chat-page[data-kind="memory"] .chat-memory-button:disabled{border-color:#d8e1e9;background:var(--button-disabled-bg);color:var(--button-disabled-text);opacity:1;cursor:default}
 .chat-page[data-kind="memory"] .chat-memory-button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.chat-memory-scope-label{flex:0 0 auto!important;color:#3f5e76!important;font-size:12px!important;line-height:20px}
