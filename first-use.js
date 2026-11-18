@@ -1,5 +1,7 @@
+import {wifiPage,connectPage,passwordVisibility} from './box-network-ui.js?v=box-wifi-20261117';
+import {createBoxNetwork,NETWORK_KEY,NETWORK_BUILD} from './box-network.js?v=box-wifi-20261117';
 import {installAccountReviewBridge} from './account-review.js?v=simple-invites-20261113';
-import {createAccountStore,loadAccountSession,saveAccountSession,ACCOUNT_BUILD,JOIN_INVITE,CLAIM_INVITE} from './account-store.js?v=simple-invites-20261113';
+import {createAccountStore,loadAccountSession,saveAccountSession,JOIN_INVITE,CLAIM_INVITE} from './account-store.js?v=simple-invites-20261113';
 import {esc,arrow,backIcon,spinner,memberForm,readMemberForm,memberFormError,bindRoleForm,installAccountKeyboard} from './account-ui.js?v=simple-invites-20261113';
 const params=new URLSearchParams(location.search),scenario=params.get('case')||'visitor';
 const token=params.get('account-session')||'ac-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
@@ -8,23 +10,78 @@ if(stored&&params.get('recipient')==='1'){const inv=store.invitation(params.get(
 saveAccountSession(token,store.snapshot());
 if(!params.has('account-session')){const url=new URL(location.href);url.searchParams.set('account-session',token);history.replaceState(null,'',url);}
 if(parent!==window)parent.postMessage({type:'origin-account-session',token},location.origin==='null'?'*':location.origin);
+let savedNetwork=null;try{savedNetwork=JSON.parse(sessionStorage.getItem(NETWORK_KEY+token));}catch{}
+const network=createBoxNetwork({initial:savedNetwork,persist:value=>sessionStorage.setItem(NETWORK_KEY+token,JSON.stringify(value))});
 const root=document.querySelector('#fu-root'),app=document.querySelector('#app'),dialog=document.querySelector('#fu-login'),loginBody=document.querySelector('#fu-login-body');
 let ui={page:'home',tab:'home',phase:'',error:'',intent:'',login:false,busy:false,inviteId:params.get('invite')||(['claim','invite-expired','invite-cancelled'].includes(store.snapshot().scenario)?CLAIM_INVITE:store.snapshot().scenario==='invite'?JOIN_INVITE:''),invitation:null,selected:null,boxes:[],draft:{name:'',role:'',birthday:''},setup:null};
+ui.wifi={ssid:'Pandora_Home',password:'',secure:true,manual:false,show:false,picker:false};ui.attempt=null;
 let generation=0,timers=new Set(),toastTimer;
 const guest=cls=>`<span class="fu-guest-avatar ${cls}"><img src="assets/guest-avatar.svg" alt="未登录头像"></span>`;
 const capsule=()=>'<button class="capsule" data-action="menu" aria-label="小程序菜单"><img src="assets/miniapp-capsule.png" alt=""></button>';
 const header=(title,back=false)=>`<header class="fu-header">${back?`<button class="icon-button fu-back" data-action="back" aria-label="返回">${backIcon}</button>`:''}<h1>${title}</h1>${capsule()}</header>`;
 const house=()=>'<div class="fu-house-art"><img src="assets/mine-family-house.png" alt=""></div>';
 function notify(text){clearTimeout(toastTimer);const t=document.querySelector('#fu-toast');t.textContent=text;t.hidden=false;toastTimer=setTimeout(()=>t.hidden=true,2600);}
-function cancel(){generation++;timers.forEach(clearTimeout);timers.clear();ui.busy=false;}
+function cancel(){generation++;network.cancel();timers.forEach(clearTimeout);timers.clear();ui.busy=false;}
 function later(fn,ms=800){const v=generation;const id=setTimeout(()=>{timers.delete(id);if(v===generation)fn();},ms);timers.add(id);}
 function needsSetup(){return store.current()?.permission==='admin'&&store.snapshot().setupComplete===false;}
-function enter(open=''){cancel();const me=store.current();if(!me)return;if(needsSetup()){showSetup();return;}const state=store.snapshot();saveAccountSession(token,state);const url=new URL('index.html',location.href);url.search='';url.searchParams.set('voice-preview','1');url.searchParams.set('account-session',token);url.searchParams.set('first-use-result',me.permission==='admin'?(state.familyFresh?'admin':'admin-existing'):'member');if(open)url.searchParams.set('account-open',open);url.searchParams.set('preview-build',ACCOUNT_BUILD);location.replace(url.href);}
+function enter(open=''){cancel();const me=store.current();if(!me)return;if(needsSetup()){showSetup();return;}const state=store.snapshot();saveAccountSession(token,state);const url=new URL('index.html',location.href);url.search='';url.searchParams.set('voice-preview','1');url.searchParams.set('account-session',token);url.searchParams.set('first-use-result',me.permission==='admin'?(state.familyFresh?'admin':'admin-existing'):'member');if(open)url.searchParams.set('account-open',open);url.searchParams.set('preview-build',NETWORK_BUILD);location.replace(url.href);}
 function start(){cancel();ui.error='';ui.intent='connect';if(needsSetup()){showSetup();return;}if(!store.snapshot().loggedIn){ui.login=true;render();}else proceed();}
 function proceed(){ui.login=false;if(ui.intent==='connect')search();else if(ui.intent==='join-submit'){render();submit();}else render();}
 function login(){if(ui.busy)return;ui.busy=true;ui.error='';render();later(()=>{if(scenario==='login-failed'&&!ui.failedLogin){ui.failedLogin=true;ui.busy=false;ui.error='微信登录暂未完成，请重试';render();return;}store.login();ui.busy=false;proceed();});}
-function search(){cancel();ui.page='connect';ui.phase='searching';ui.error='';ui.busy=true;render();later(()=>{ui.busy=false;if(['not-found','permission'].includes(scenario)&&!ui.retriedSearch){ui.phase=scenario;render();return;}ui.boxes=[{id:'0829',claimed:scenario==='claimed'},...(scenario==='multiple'?[{id:'0618',claimed:false}]:[])];ui.selected=ui.boxes.length===1?'0829':null;ui.phase='found';render();},1100);}
-function activate(){if(ui.busy||!['found','activation-error'].includes(ui.phase)||!ui.selected||ui.boxes.find(b=>b.id===ui.selected)?.claimed)return;cancel();ui.busy=true;ui.phase='activating';ui.error='';render();later(()=>{if(scenario==='activation-failed'&&!ui.failedActivation){ui.failedActivation=true;ui.busy=false;ui.phase='activation-error';ui.error='暂未完成激活，管理员身份尚未建立，请重试';render();return;}const r=store.activate();if(!r.ok){ui.busy=false;ui.phase='activation-error';ui.error=r.message;render();return;}sync();},1200);}
+function search(){
+ cancel();ui.page='connect';ui.phase='searching';ui.error='';ui.busy=true;render();
+ later(()=>{
+  ui.busy=false;
+  if(['not-found','permission','bluetooth-off'].includes(scenario)&&!ui.retriedSearch){ui.phase=scenario;render();return;}
+  ui.boxes=network.discover([{id:'0829',claimed:scenario==='claimed',online:['already-online','local-box','claimed'].includes(scenario)},...(scenario==='multiple'?[{id:'0618',claimed:false,online:true}]:[])]);
+  ui.selected=network.current()?.id||null;ui.phase='found';render();
+ },1100);
+}
+function readWifi(){const ssid=root.querySelector('#wifi-ssid'),password=root.querySelector('#wifi-password');if(ssid)ui.wifi.ssid=ssid.value;if(password)ui.wifi.password=password.value;}
+function configure(){
+ if(ui.busy||!network.current()||network.current().claimed)return;
+ cancel();ui.page='wifi';ui.error='';ui.wifi.picker=false;
+ if(network.current().ssid)ui.wifi.ssid=network.current().ssid;
+ render();
+}
+function connectSelected(){if(ui.busy)return;const box=network.current();if(!box||box.claimed)return;if(!box.online){configure();return;}verifyNetwork();}
+function provision(){
+ if(ui.busy||ui.page!=='wifi')return;readWifi();
+ if(!ui.wifi.ssid.trim()){ui.error='请填写 Wi-Fi 名称';render();return;}
+ if(ui.wifi.secure&&!ui.wifi.password){ui.error='请输入 Wi-Fi 密码';render();return;}
+ cancel();ui.attempt=network.begin();if(!ui.attempt)return;
+ ui.provisioned=true;ui.page='connect';ui.busy=true;ui.error='';ui.phase='sending';render();
+ later(()=>{
+  ui.phase='wifi-connecting';render();
+  later(()=>{
+   if(['wifi-password','wifi-failed'].includes(scenario)&&!ui.failedWifi){
+    ui.failedWifi=true;ui.busy=false;ui.page='wifi';ui.error=scenario==='wifi-password'?'Wi-Fi 密码不正确，请检查后重新连接。':'盒子暂未连接到 Wi-Fi，请确认网络可用，并将盒子靠近路由器后重试。';render();return;
+   }
+   if(!network.connected(ui.attempt,ui.wifi.ssid.trim()))return;
+   ui.wifi.password='';verifyNetwork(true);
+  },1600);
+ },850);
+}
+function verifyNetwork(fromWifi=false){
+ if(!fromWifi){cancel();ui.attempt=network.begin();}
+ if(!network.canActivate(ui.attempt))return;
+ ui.page='connect';ui.phase='verifying-network';ui.busy=true;ui.error='';render();
+ later(()=>{
+  if(['lan-mismatch','lan-permission'].includes(scenario)&&!ui.failedLan){ui.failedLan=true;ui.busy=false;ui.phase=scenario;render();return;}
+  activate();
+ },1150);
+}
+function activate(){
+ if(!network.canActivate(ui.attempt))return;
+ ui.busy=true;ui.phase='activating';ui.error='';render();
+ later(()=>{
+  if(scenario==='activation-failed'&&!ui.failedActivation){ui.failedActivation=true;ui.busy=false;ui.phase='activation-error';ui.error='盒子已联网，激活暂未完成。请重试，无需重新配置 Wi-Fi。';render();return;}
+  if(!network.canActivate(ui.attempt))return;
+  const r=store.activate();if(!r.ok){ui.busy=false;ui.phase='activation-error';ui.error=r.message;render();return;}
+  sync();
+ },1200);
+}
+function retryActivation(){if(ui.busy)return;cancel();ui.attempt=network.begin();activate();}
 function sync(){cancel();ui.phase='syncing';ui.busy=true;render();later(()=>{if(scenario==='sync-failed'&&!ui.failedSync){ui.failedSync=true;ui.busy=false;ui.phase='sync-error';render();return;}enter();},1000);}
 function showSetup(){cancel();ui.page='setup';ui.error='';if(!ui.setup){const m=store.current(),s=store.snapshot();ui.setup={familyName:s.familyFresh?'':s.familyName,name:m.name,role:m.role,birthday:m.birthday};}render();}
 function setup(){const form=memberForm(ui.setup,store,{prefix:'setup',note:false}).replace('<div class="ac-fields">',`<div class="ac-fields"><div class="ac-field"><label for="setup-family-name">家庭名称</label><input id="setup-family-name" maxlength="20" required placeholder="必填" value="${esc(ui.setup.familyName)}"></div>`).replace('>昵称</label>','>管理员昵称</label>');return `${header('设置基本信息',true)}<main class="fu-scroll"><p class="fu-page-caption">盒子已连接，补充家庭和你的基本信息即可开始使用。</p>${form}<p class="ac-note">家庭名称、管理员昵称必填；家庭角色和生日选填。</p></main><footer class="fu-actions"><button class="primary-button" data-action="save-setup" ${ui.busy?'disabled':''}>${ui.busy?spinner+'正在创建…':'完成并进入家庭'}</button></footer>`;}
@@ -48,13 +105,8 @@ function home(){const signed=store.snapshot().loggedIn,local=store.snapshot().lo
  if(ui.tab!=='home')return `${header(ui.tab==='devices'?'设备':'记忆')}<main class="fu-home-body"><h2 class="fu-home-title">${ui.tab==='devices'?'让小元连接家中的设备':'让小元慢慢了解你'}</h2><p class="fu-home-description">连接盒子后，${ui.tab==='devices'?'查看设备状态并使用日常控制':'查看家庭共享记忆与自己的个人记忆'}。</p><div class="fu-home-choices"><button class="fu-choice" data-action="connect"><span><strong>连接我的盒子</strong><small>建立家庭连接</small></span>${arrow}</button></div></main>`;
  return `${header('你好，主人～')}<main class="fu-home-body"><h2 class="fu-home-title">从这里，创建你的家</h2><p class="fu-home-description">${needsSetup()?'盒子已连接，继续完善家庭和你的基本信息。':local?'连接后延续已有空间、成员和记忆。':'连接引元盒子，让小元开始照看你的家。'}</p><div class="fu-home-visual"><span class="mp-house-art"><img src="assets/mine-family-house.png" alt="家庭房屋"></span></div><div class="fu-home-choices"><button class="fu-choice" data-action="connect"><span class="fu-choice-art" aria-hidden="true"><img src="assets/nav-devices.svg" alt=""></span><span><strong>${needsSetup()?'继续设置':'连接我的盒子'}</strong><small>${needsSetup()?'保留连接结果，无需再次激活':'首次激活，你将成为管理员'}</small></span>${arrow}</button></div><p class="fu-note">盒子无需登录也可本地使用；手机连接后可随身查看与操作。</p></main>`;
 }
-function connect(){let body='',footer='';
- if(['searching','activating','syncing'].includes(ui.phase)){const title={searching:'正在寻找引元盒子',activating:'正在连接并激活',syncing:store.snapshot().familyFresh?'正在准备家庭信息':'正在同步家中信息'}[ui.phase];body=`<div class="fu-loading" role="status">${spinner}<h2>${title}</h2><p>${ui.phase==='searching'?'请保持手机与盒子在同一局域网':ui.phase==='activating'?'完成后，当前账号将成为家庭管理员':store.snapshot().familyFresh?'连接已建立，即将设置家庭和你的基本信息':'保留已有的空间、成员与记忆'}</p></div>`;}
- if(['permission','not-found'].includes(ui.phase)){body=`<div class="fu-empty-state">${house()}<h2>${ui.phase==='permission'?'需要开启本地网络访问':'暂未发现引元盒子'}</h2><p>请确认盒子已联网，手机与盒子在同一局域网。<br>允许小程序访问本地网络后，再次查找。</p></div>`;footer='<button class="primary-button" data-action="retry-search">重新查找</button>';}
- if(['found','activation-error'].includes(ui.phase)){const selected=ui.boxes.find(b=>b.id===ui.selected);body=`<div class="ac-connect-intro">${house()}<h2>找到家中的引元盒子</h2><p>激活后，你将成为家庭管理员。</p></div><div class="fu-box-list">${ui.boxes.map(b=>`<button class="fu-box ${ui.selected===b.id?'selected':''}" data-box="${b.id}" aria-pressed="${ui.selected===b.id}"><span><strong>引元盒子</strong><small>设备尾号 ${b.id} · ${b.claimed?'已被认领':'可以连接'}</small></span><span aria-hidden="true">${ui.selected===b.id?'✓':''}</span></button>`).join('')}</div><p class="fu-account-state">当前账号 · ${esc(store.actor().name)}</p>${selected?.claimed?'<p class="fu-error">该盒子已有管理员，请联系管理员发送邀请链接。</p>':''}${ui.error?`<p class="fu-error" role="alert">${esc(ui.error)}</p>`:''}`;footer=`<button class="primary-button" data-action="activate" ${!selected||selected.claimed?'disabled':''}>${ui.phase==='activation-error'?'重试激活':'连接并激活'}</button><button class="fu-text-button" data-action="retry-search">重新查找</button>`;}
- if(ui.phase==='sync-error'){body=`<div class="fu-empty-state">${house()}<h2>已激活，家庭信息待同步</h2><p>你的管理员身份已经建立，可以稍后继续同步。</p></div>`;footer='<button class="primary-button" data-action="sync">重新同步</button><button class="fu-text-button" data-action="enter">稍后继续</button>';}
- return `${header('连接引元盒子',true)}<main class="fu-scroll"><p class="fu-page-caption">盒子已联网 · 首次手机激活需同一局域网</p>${body}</main>${footer?`<footer class="fu-actions">${footer}</footer>`:''}`;
-}
+function connect(){return connectPage({ui,network,store,header,house});}
+function wifi(){return wifiPage({ui,header,house});}
 function invitationAccount(){return `<p class="fu-account-state">${store.snapshot().loggedIn?'当前账号 · '+esc(store.actor().name):'登录后继续使用这份邀请'}</p>`;}
 function join(){
  if(ui.phase==='declined')return `${header('加入家庭',true)}<main class="fu-scroll"><div class="ac-empty"><h2>你尚未加入家庭</h2><p>家庭资料和身份保持不变。需要时可继续接受这份邀请。</p></div></main><footer class="fu-actions"><button class="primary-button" data-action="resume-invite">返回邀请</button></footer>`;
@@ -67,11 +119,12 @@ function join(){
  const content='<p class="mp-section-caption">昵称必填，家庭角色和生日选填。</p>'+memberForm(ui.draft,store,{prefix:'join',note:false});
  return `${header('加入家庭',true)}<main class="fu-scroll">${intro}${content}${invitationAccount()}${ui.error?`<p class="fu-error" role="alert">${esc(ui.error)}</p>`:''}</main><footer class="fu-actions"><button class="primary-button" data-action="submit-join">${store.snapshot().loggedIn?'创建并加入':'登录并加入'}</button><button class="fu-text-button" data-action="decline">暂不加入</button></footer>`;
 }
-function render(){root.innerHTML=ui.page==='connect'?connect():ui.page==='join'?join():ui.page==='setup'?setup():home();app.dataset.fuPage=ui.page;app.dataset.fuTab=ui.tab;document.querySelector('.tabbar').hidden=ui.page!=='home';document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===ui.tab?'page':'false'));if(ui.page==='setup')bindRoleForm(root,'setup',{store,memberId:store.current()?.id});else bindRoleForm(root,'join',{store});
+function render(){root.innerHTML=ui.page==='wifi'?wifi():ui.page==='connect'?connect():ui.page==='join'?join():ui.page==='setup'?setup():home();app.dataset.fuPage=ui.page;app.dataset.fuTab=ui.tab;document.querySelector('.tabbar').hidden=ui.page!=='home';document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===ui.tab?'page':'false'));if(ui.page==='setup')bindRoleForm(root,'setup',{store,memberId:store.current()?.id});else bindRoleForm(root,'join',{store});
  if(ui.login){loginBody.innerHTML=`<button class="fu-login-close" data-action="cancel-login" aria-label="取消登录">×</button>${guest('fu-login-avatar')}<h2>微信登录引元</h2><p>登录后继续${ui.intent==='connect'?'连接盒子':'加入家庭'}<br>首次登录自动创建账号</p>${ui.error?`<p class="fu-error" role="alert">${esc(ui.error)}</p>`:''}<button class="primary-button fu-wechat-login" data-action="login" ${ui.busy?'disabled':''}>${ui.busy?'正在登录…':'微信登录'}</button><button class="fu-text-button" data-action="cancel-login">暂不登录</button><p class="fu-login-privacy"><button data-action="privacy">隐私政策与数据相关协议</button></p>`;if(!dialog.open)dialog.showModal();}else if(dialog.open)dialog.close();}
-function back(){if(ui.page==='setup'){cancel();ui.page='home';ui.tab='home';render();return;}if(store.current()){enter();return;}cancel();ui.login=false;ui.error='';if(ui.page==='join'){ui.phase='declined';render();return;}ui.page='home';render();}
-document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b||b.disabled)return;const action=b.dataset.action;if(action==='menu'){parent.postMessage({type:'origin-first-use-menu',bottom:b.getBoundingClientRect().bottom},location.origin);return;}if(action==='decline'){ui.phase='declined';render();return;}if(action==='resume-invite'){verifyInvite();return;}if(action==='connect')start();else if(action==='login')login();else if(action==='cancel-login'){cancel();ui.login=false;ui.error='';render();}else if(action==='back')back();else if(action==='retry-search'){ui.retriedSearch=true;search();}else if(action==='activate')activate();else if(action==='sync')sync();else if(action==='enter')enter();else if(action==='submit-join')submit();else if(action==='save-setup')saveSetup();else if(action==='privacy')notify('相关协议内容待补充');else if(action==='help')notify('盒子可独立使用；手机首次激活需同网，家人通过管理员发送的邀请链接加入');});
-root.addEventListener('click',e=>{const b=e.target.closest('[data-box]');if(b&&!ui.busy){ui.selected=b.dataset.box;render();}});root.addEventListener('input',e=>{if(e.target.closest('.ac-form')){if(ui.page==='setup'){ui.setup={...readMemberForm(root,'setup'),familyName:root.querySelector('#setup-family-name').value};root.querySelector('#setup-error').textContent='';}else ui.draft=readMemberForm(root,'join');}});
+function back(){if(ui.page==='wifi'){readWifi();cancel();ui.page='connect';ui.phase='found';ui.error='';render();return;}if(ui.page==='setup'){cancel();ui.page='home';ui.tab='home';render();return;}if(store.current()){enter();return;}cancel();ui.login=false;ui.error='';if(ui.page==='join'){ui.phase='declined';render();return;}ui.page='home';render();}
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b||b.disabled)return;const action=b.dataset.action;if(action==='menu'){parent.postMessage({type:'origin-first-use-menu',bottom:b.getBoundingClientRect().bottom},location.origin);return;}if(action==='decline'){ui.phase='declined';render();return;}if(action==='resume-invite'){verifyInvite();return;}if(action==='connect')start();else if(action==='login')login();else if(action==='cancel-login'){cancel();ui.login=false;ui.error='';render();}else if(action==='back')back();else if(action==='retry-search'){ui.retriedSearch=true;search();}else if(action==='activate')connectSelected();else if(action==='provision')provision();else if(action==='configure')configure();else if(action==='retry-network')verifyNetwork();else if(action==='retry-activation')retryActivation();else if(action==='show-password'){readWifi();ui.wifi.show=!ui.wifi.show;passwordVisibility(b,root.querySelector('#wifi-password'),ui.wifi.show);}else if(action==='choose-network'){readWifi();ui.wifi.manual=false;ui.wifi.picker=!ui.wifi.picker;render();}else if(action==='manual-network'){readWifi();ui.wifi.manual=true;ui.wifi.secure=true;ui.wifi.picker=false;ui.wifi.ssid='';ui.wifi.password='';ui.error='';render();root.querySelector('#wifi-ssid')?.focus();}else if(action==='sync')sync();else if(action==='enter')enter();else if(action==='submit-join')submit();else if(action==='save-setup')saveSetup();else if(action==='privacy')notify('相关协议内容待补充');else if(action==='help')notify('开启蓝牙靠近盒子，按提示配置 Wi-Fi 并激活；家人通过管理员发送的邀请链接加入');});
+root.addEventListener('click',e=>{const b=e.target.closest('[data-box]');if(b&&!ui.busy){if(ui.selected!==b.dataset.box)ui.wifi={ssid:'Pandora_Home',password:'',secure:true,manual:false,show:false,picker:false};network.select(b.dataset.box);ui.selected=b.dataset.box;ui.error='';ui.phase='found';render();}const n=e.target.closest('[data-network]');if(n&&!ui.busy){ui.wifi={...ui.wifi,ssid:n.dataset.network,secure:n.dataset.secure==='true',password:'',manual:false,picker:false};ui.error='';render();}});root.addEventListener('input',e=>{if(ui.page==='wifi'){readWifi();ui.error='';root.querySelector('.fu-error')?.remove();}if(e.target.closest('.ac-form')){if(ui.page==='setup'){ui.setup={...readMemberForm(root,'setup'),familyName:root.querySelector('#setup-family-name').value};root.querySelector('#setup-error').textContent='';}else ui.draft=readMemberForm(root,'join');}});
+root.addEventListener('keydown',e=>{if(ui.page==='wifi'&&e.key==='Enter'&&e.target.matches('input')){e.preventDefault();provision();}});
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{cancel();ui.tab=b.dataset.tab;ui.page='home';render();});
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('[data-action=menu]'))parent.postMessage({type:'origin-first-use-dismiss-menu'},location.origin);});
 dialog.addEventListener('cancel',e=>{e.preventDefault();cancel();ui.login=false;render();});window.addEventListener('pagehide',cancel);

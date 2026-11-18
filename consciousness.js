@@ -1,4 +1,5 @@
 import {previewNow,previewDate} from './preview-clock.js';
+import {activeCareExamples} from './care-active-preview.js?v=active-care-20261116';
 // One record stream powers the full journal and the selected experiences.
 // This standalone preview uses a fixed illustrative local day and local data only.
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -40,6 +41,7 @@ export function getIdleExpression(index,rooms){
 }
 
 const seeds=[
+  ...activeCareExamples(at),
   {id:'evening-light',title:'客厅灯光已调暗',summary:'客厅主灯从60%调至35%，看电视时更柔和，其他空间照明保留',state:'past',status:'已完成',tone:'good',entries:[
     [at(0,17,40),'收到用灯要求','你希望看电视时将客厅灯光调柔和一些'],
     [at(0,17,41),'发出调整请求','只将客厅主灯亮度由60%调至35%，其他空间保持'],

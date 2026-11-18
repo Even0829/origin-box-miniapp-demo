@@ -1,6 +1,6 @@
 import {previewNow} from './preview-clock.js';
 import {createCareRestoration} from './care-restoration.js?v=care-card-actions-20261021';
-import {createEventAdjustment} from './event-adjustment.js?v=event-adjustment-20261022';
+import {createEventAdjustment} from './event-adjustment.js?v=active-care-20261116';
 
 const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const clean=value=>String(value??'').replace(/[。．.]+$/u,'');

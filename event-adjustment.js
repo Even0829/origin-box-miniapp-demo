@@ -172,7 +172,8 @@ export function createEventAdjustment({ sheet, openSheet, getDevices, getControl
   function openVoice() {
     const session = current(); if (!session || session.busy) return;
     voiceDraft = input().value; voiceText = ''; voice.querySelector('.chat-voice-transcript').textContent = '';
-    const samples = session.pending ? ['确认修改', '灯光调到60%，净化保持现在这样', '取消修改'] : ['灯光再亮一点，净化保持现在这样', '刚才不是看电视，是在聊天'];
+    const contextual = session.item.correctionSamples;
+    const samples = session.pending ? ['确认修改',...(contextual?.length ? contextual.slice(0,1) : ['灯光调到60%，净化保持现在这样']),'取消修改'] : contextual?.length ? contextual : ['灯光再亮一点，净化保持现在这样', '刚才不是看电视，是在聊天'];
     voice.querySelector('.chat-voice-samples').innerHTML = '<span>也可以这样说</span>' + samples.map(text => `<button data-ea-utterance="${e(text)}">${e(text)}</button>`).join('');
     voice.querySelector('.chat-voice-caption').textContent = '正在听，点击下方结束'; voice.dataset.phase = 'listening';
     voice.style.setProperty('--frame-top', `${doc.querySelector('#app').getBoundingClientRect().top}px`); voice.showModal(); voice.querySelector('[data-ea-voice="end"]').focus({ preventScroll: true });
