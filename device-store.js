@@ -1,17 +1,29 @@
+import {elderDeviceHistory, grandpa, nightDeviceHistory} from './elder-care-demo.js';
+import {previewNow, previewAt} from './preview-clock.js';
 // 本地设备数据与回执模拟；所有页面从本模块读取同一份设备状态。
 // 能力表示已接入的设备接口，不等同于空间目标已达成。
+import { ADDITIONAL_DEVICE_SOURCES, createAdditionalDevices, nextMedicationReminder, RADAR_IMAGE } from './device-demo-catalog.js?v=device-list-finish-20261118';
+
 const DEFAULT_ROOMS = [
   { id: 'living', name: '客厅' }, { id: 'master', name: '主卧' },
   { id: 'second', name: '次卧' }, { id: 'bathroom', name: '卫生间' },
   { id: 'kitchen', name: '厨房' }, { id: 'dining', name: '餐厅' },
 ];
+const CONTROL_KEYS = ['power', 'level', 'mode', 'colorTemperature', 'targetTemperature', 'fanMode', 'swingMode', 'oscillation'];
+const SEED_CONNECTIONS = {
+  米家: { providerId: 'xiaomi', accountId: 'mi-main' },
+  涂鸦: { providerId: 'tuya', accountId: 'ty-main' },
+  引态: { providerId: 'int', accountId: null },
+};
+const SEED_SOURCE_UPDATES = { ...ADDITIONAL_DEVICE_SOURCES, 'second-camera': '引态' };
 
-function createSeed(stamp) {
+function createSeed(stamp, elderExamples) {
+  const careHistory = elderExamples ? elderDeviceHistory(previewAt) : {};
   const reading = (key, label, value, unit = '', text = `${value}${unit}`) => ({ key, label, value, unit, text, updatedAt: stamp });
   const sensor = (device) => ({ online: true, pending: null, readings: [], inputCapabilities: [], responseCapabilities: [], permissions: { read: true, control: false }, ...device });
   const control = (device) => ({ online: true, pending: null, readings: [], inputCapabilities: [], responseCapabilities: [], permissions: { read: true, control: true }, ...device });
   return [
-    sensor({ id: 'living-radar', roomId: 'living', name: '客厅毫米波雷达', source: '涂鸦', type: 'presence', image: 'assets/device-radar.png', inputCapabilities: ['在场', '姿态', '活动强度'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('posture', '姿态', '坐姿'), reading('motion', '活动强度', '轻微活动')] }),
+    sensor({ id: 'living-radar', roomId: 'living', name: '客厅毫米波雷达', source: '涂鸦', type: 'presence', image: RADAR_IMAGE, inputCapabilities: ['在场', '姿态', '活动强度'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('posture', '姿态', '坐姿'), reading('motion', '活动强度', '轻微活动')] }),
     sensor({ id: 'living-camera', roomId: 'living', name: '客厅摄像头', source: '涂鸦', type: 'presence', image: 'assets/device-camera.png', inputCapabilities: ['在场', '人脸', '行为活动'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('behavior', '行为活动', '看电视')] }),
     control({ id: 'living-air', roomId: 'living', name: '空气置地机', source: '涂鸦', type: 'air', image: 'assets/device-air.png', power: true, mode: '低噪', modeOptions: ['自动', '标准', '低噪'], responseCapabilities: ['净化', '净化模式'] }),
     control({ id: 'living-ac', roomId: 'living', name: '客厅空调', source: '米家', type: 'climate', image: 'assets/device-ac.png', power: true, targetTemperature: 24, targetTemperatureMin: 16, targetTemperatureMax: 30, targetTemperatureStep: 1, temperatureModes: ['制冷', '制热', '自动'], mode: '制冷', modeOptions: ['制冷', '制热', '自动', '除湿', '送风'], fanMode: '自动', fanModeOptions: ['自动', '低风', '中风', '高风'], swingMode: '关闭', swingModeOptions: ['关闭', '上下', '左右', '全向'], inputCapabilities: ['温度'], responseCapabilities: ['制冷', '制热', '温度调节', '模式', '风速', '扫风'], readings: [reading('temperature', '室内温度', 25, '℃')] }),
@@ -20,10 +32,10 @@ function createSeed(stamp) {
     control({ id: 'master-left', roomId: 'master', name: '主卧左灯', source: '米家', type: 'light', image: 'assets/lamp-device.png', power: true, level: 30, responseCapabilities: ['照明', '亮度'] }),
     control({ id: 'master-right', roomId: 'master', name: '主卧右灯', source: '涂鸦', type: 'light', image: 'assets/lamp-device.png', power: true, level: 60, responseCapabilities: ['照明', '亮度'] }),
     sensor({ id: 'master-environment', roomId: 'master', name: '温湿度传感器', source: '米家', type: 'environment', image: 'assets/device-temperature.png', inputCapabilities: ['温湿度'], readings: [reading('temperature', '温度', 24, '℃'), reading('humidity', '湿度', 51, '%')] }),
-    sensor({ id: 'master-presence', roomId: 'master', name: '主卧毫米波雷达', source: '涂鸦', type: 'presence', image: 'assets/device-radar.png', inputCapabilities: ['在场', '姿态', '活动强度'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('posture', '姿态', '卧姿'), reading('motion', '活动强度', '暂无明显活动')] }),
-    sensor({ id: 'second-camera', roomId: 'second', name: '次卧摄像头', source: '涂鸦', type: 'presence', image: 'assets/device-camera.png', inputCapabilities: ['在场', '行为活动'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('behavior', '行为活动', '阅读')] }),
-    sensor({ id: 'bathroom-presence', roomId: 'bathroom', name: '卫生间毫米波雷达', source: '涂鸦', type: 'presence', image: 'assets/device-radar.png', online: false, inputCapabilities: ['在场'], readings: [reading('presence', '在场', null, '', '在场状态待更新')] }),
-    sensor({ id: 'kitchen-presence', roomId: 'kitchen', name: '厨房毫米波雷达', source: '涂鸦', type: 'presence', image: 'assets/device-radar.png', inputCapabilities: ['在场'], readings: [reading('presence', '在场', false, '', '未检测到人在场')] }),
+    sensor({ id: 'master-presence', roomId: 'master', name: '主卧毫米波雷达', source: '涂鸦', type: 'presence', image: RADAR_IMAGE, inputCapabilities: ['在场', '姿态', '活动强度'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('posture', '姿态', '卧姿'), reading('motion', '活动强度', '暂无明显活动')] }),
+    sensor({ id: 'second-camera', roomId: 'second', name: '次卧摄像头', source: SEED_SOURCE_UPDATES['second-camera'], type: 'presence', image: 'assets/device-camera.png', inputCapabilities: ['在场', '行为活动'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('behavior', '行为活动', '阅读')] }),
+    sensor({ id: 'bathroom-presence', roomId: 'bathroom', name: '卫生间毫米波雷达', source: '涂鸦', type: 'presence', image: RADAR_IMAGE, online: false, inputCapabilities: ['在场'], readings: [reading('presence', '在场', null, '', '在场状态待更新')] }),
+    sensor({ id: 'kitchen-presence', roomId: 'kitchen', name: '厨房毫米波雷达', source: '涂鸦', type: 'presence', image: RADAR_IMAGE, inputCapabilities: ['在场'], readings: [reading('presence', '在场', false, '', '未检测到人在场')] }),
     sensor({ id: 'dining-camera', roomId: 'dining', name: '餐厅摄像头', source: '涂鸦', type: 'presence', image: 'assets/device-camera.png', inputCapabilities: ['在场', '行为活动'], readings: [reading('presence', '在场', true, '', '检测到人在场'), reading('behavior', '行为活动', '用餐')] }),
     sensor({ id: 'second-environment', roomId: 'second', name: '温湿度传感器', source: '米家', type: 'environment', image: 'assets/device-temperature.png', inputCapabilities: ['温湿度'], readings: [reading('temperature', '温度', 25, '℃'), reading('humidity', '湿度', 46, '%')] }),
     sensor({ id: 'bathroom-humidity', roomId: 'bathroom', name: '温湿度传感器', source: '涂鸦', type: 'environment', image: 'assets/device-temperature.png', inputCapabilities: ['温湿度'], readings: [reading('temperature', '温度', 24, '℃'), reading('humidity', '湿度', 58, '%')] }),
@@ -34,21 +46,45 @@ function createSeed(stamp) {
     control({ id: 'unassigned-plug', roomId: null, name: '备用吊灯', source: '涂鸦', type: 'light', image: 'assets/device-pendant.png', power: false, level: 60, responseCapabilities: ['照明', '亮度'] }),
     sensor({ id: 'unassigned-environment', roomId: null, name: '备用温湿度传感器', source: '米家', type: 'environment', image: 'assets/device-temperature.png', inputCapabilities: ['温湿度'], readings: [reading('temperature', '温度', 23.5, '℃'), reading('humidity', '湿度', 47, '%')] }),
     control({ id: 'unassigned-lamp', roomId: null, name: '白色吊灯', source: '米家', type: 'light', image: 'assets/lamp-device.png', power: false, level: 45, colorTemperature: 3000, colorTemperatureMin: 2700, colorTemperatureMax: 6500, responseCapabilities: ['照明', '亮度', '色温'] }),
-  ];
+    ...createAdditionalDevices(stamp, elderExamples),
+  ].map(device => careHistory[device.id] ? {...device, careHistory: careHistory[device.id]} : device);
 }
 
-export function createDeviceStore({ seedMode = 'normal', initialDevices = null, offline = false, getRooms = () => DEFAULT_ROOMS, onChange, onRecord, onReceipt } = {}) {
-  const seededAt = Date.now();
-  const devices = (initialDevices || createSeed(seededAt)).filter(device => (initialDevices || seedMode !== 'empty') && (seedMode !== 'starter' || ['living-lamp','living-environment'].includes(device.id))).map((device) => initialDevices ? {...device,pending:null} : ({
-    ...device,
-    previewOnline: device.online,
-    online: offline ? false : device.online,
-    controlRevision: 0,
-    updatedAt: !offline && device.online ? seededAt : seededAt - 25 * 60 * 1000,
-    providerId: device.source === '米家' ? 'xiaomi' : 'tuya',
-    accountId: device.source === '米家' ? 'mi-main' : 'ty-main',
-    externalId: `cn:seed:${device.id}`,
-  }));
+export function createDeviceStore({ elderExamples = false, seedMode = 'normal', initialDevices = null, offline = false, getRooms = () => DEFAULT_ROOMS, onChange, onRecord, onReceipt } = {}) {
+  const seededAt = previewNow();
+  const sourceDevices = initialDevices || createSeed(seededAt, elderExamples);
+  const originalSeed = device => !initialDevices || device.externalId === `cn:seed:${device.id}`;
+  const belt = sourceDevices.find(device => device.id === 'second-sleep-belt' && originalSeed(device) && device.roomId === 'second');
+  const session = belt?.health?.session;
+  const night = elderExamples && belt?.health?.subject?.id === grandpa.id && Number.isFinite(session?.end)
+    ? nightDeviceHistory(session.end) : {};
+  const devices = sourceDevices.filter(device => (initialDevices || seedMode !== 'empty') && (seedMode !== 'starter' || ['living-lamp','living-environment'].includes(device.id))).map((device) => {
+    const source = SEED_SOURCE_UPDATES[device.id] ?? device.source;
+    const sourceChanged = source !== device.source;
+    const connection = !initialDevices || sourceChanged ? SEED_CONNECTIONS[source] : null;
+    const image = device.type === 'presence' && device.image === 'assets/device-radar.png' ? RADAR_IMAGE : device.image;
+    const current = { ...device, ...connection, source, image, pending: null };
+    if (connection?.providerId === 'int') current.roomSource = device.roomId ? (initialDevices ? 'user' : 'automatic') : null;
+    else if (sourceChanged) delete current.roomSource;
+    if (originalSeed(device) && night[device.id] && device.roomId === (device.id === 'second-sleep-belt' ? 'second' : 'living')) {
+      current.nightCareHistory ??= night[device.id];
+    }
+    if (device === belt && !device.inputCapabilities.includes('在床／离床')) {
+      current.inputCapabilities = [...device.inputCapabilities, '在床／离床'];
+    }
+    if (originalSeed(device) && device.id === 'master-left' && current.careHistory) {
+      current.careHistory = current.careHistory.filter(row => !['elder-night-on', 'elder-night-off'].includes(row.id));
+    }
+    if (initialDevices) return current;
+    return {
+      ...current,
+      previewOnline: device.online,
+      online: offline ? false : device.online,
+      controlRevision: 0,
+      updatedAt: !offline && device.online ? seededAt : seededAt - 25 * 60 * 1000,
+      externalId: `cn:seed:${device.id}`,
+    };
+  });
   const listeners = new Set();
   const requestTimers = new Map();
   const history = new Map();
@@ -59,7 +95,7 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
   let controlSerial = 0;
   let execution = {
     id: 'master-soft-light', roomId: 'master', title: '主卧照明调节', target: '两盏灯调至30%',
-    status: 'running', source: 'user', startedAt: Date.now() - 5000, updatedAt: Date.now(),
+    status: 'running', source: 'user', startedAt: previewNow() - 5000, updatedAt: previewNow(),
     devices: [
       { id: 'master-left', name: '主卧左灯', source: '米家', current: 30, target: 30, status: 'confirmed', feedback: '已调至30%' },
       { id: 'master-right', name: '主卧右灯', source: '涂鸦', current: 60, target: 30, status: 'waiting', feedback: '等待反馈' },
@@ -101,7 +137,7 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
     }
     else if (!device.online) value.statusText = '离线';
     else if (typeof device.power === 'boolean') {
-      value.statusText = !device.power ? '关闭' : device.type === 'light' && Number.isFinite(device.level) ? `开启 · ${device.level}%` : device.type === 'air' ? `开启 · ${device.mode}模式` : device.type === 'climate' ? climateStatus(device) : '开启';
+      value.statusText = !device.power ? '关闭' : device.type === 'light' && Number.isFinite(device.level) ? `开启 · ${device.level}%` : device.type === 'air' ? `开启 · ${device.mode}模式` : ['climate', 'heater'].includes(device.type) ? climateStatus(device) : '开启';
     } else value.statusText = device.readings.map((item) => item.text).join(' · ') || '暂无读数';
     // 卡片优先表达读数、模式和设定；电源由开关呈现，详情保留明确的状态文案。
     if (device.pending) value.cardStatusText = '等待设备反馈';
@@ -109,13 +145,28 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
     else if (device.type === 'light' && Number.isFinite(device.level)) value.cardStatusText = `${device.power ? '亮度' : '亮度设定'}${device.level}%`;
     else if (device.type === 'air') value.cardStatusText = device.power ? `${device.mode}模式` : `模式设定 · ${device.mode}`;
     else if (device.type === 'climate') value.cardStatusText = climateStatus(device);
+    else if (device.type === 'heater') value.cardStatusText = device.power ? climateStatus(device) : `设定 ${climateStatus(device)}`;
+    else if (device.health) value.cardStatusText = healthSummary(device);
     else value.cardStatusText = device.readings.map((item) => item.text).join(' · ') || '暂无读数';
     return value;
   }
 
+  function healthSummary(device) {
+    if (device.health.kind === 'medication') {
+      const next = nextMedicationReminder(device.health.reminder);
+      return next ? `下次提醒 · ${next}` : '用药提醒已关闭';
+    }
+    const [primary, secondary] = device.readings;
+    if (!primary) return '等待设备数据';
+    if (primary.key === 'systolic' && secondary) return `${primary.value}/${secondary.value} mmHg`;
+    if (primary.key === 'weight' && secondary) return `${primary.text} · 体脂${secondary.text}`;
+    if (primary.key === 'sleepDuration') return `最近一晚 · ${primary.text}`;
+    return `${primary.label} ${primary.text}`;
+  }
+
   function emit(type, changedDevices = [], changedRooms = []) {
     if (disposed) return;
-    const change = { type, deviceIds: [...new Set(changedDevices)], roomIds: [...new Set(changedRooms.filter((id) => id !== null))], summary: summary(), at: Date.now() };
+    const change = { type, deviceIds: [...new Set(changedDevices)], roomIds: [...new Set(changedRooms.filter((id) => id !== null))], summary: summary(), at: previewNow() };
     onChange?.(clone(change));
     for (const listener of listeners) listener(clone(change));
   }
@@ -143,7 +194,7 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
   function getRoomCapabilities(roomId) {
     reconcileRooms();
     const inRoom = devices.filter((device) => device.roomId === roomId);
-    const inputDevices = inRoom.filter((device) => device.online && device.permissions.read && device.inputCapabilities.length);
+    const inputDevices = inRoom.filter((device) => !device.health && device.online && device.permissions.read && device.inputCapabilities.length);
     const responseDevices = inRoom.filter((device) => device.online && device.permissions.control && device.responseCapabilities.length);
     return {
       roomId, roomName: roomName(roomId), total: inRoom.length, online: inRoom.filter((device) => device.online).length,
@@ -223,10 +274,18 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
       const disabledReason = reason || (device.power === false ? '请先开启设备' : '');
       controls.push(create(key, 'select', label, device[key], { options: items, layout: 'half', group: 'airflow', disabled: Boolean(disabledReason), disabledReason }));
     }
+    if (device.responseCapabilities.includes('摆头') && typeof device.oscillation === 'boolean') {
+      const disabledReason = reason || (device.power === false ? '请先开启设备' : '');
+      controls.push(create('oscillation', 'toggle', `${device.oscillationAngle}° 摆头`, device.oscillation, { disabled: Boolean(disabledReason), disabledReason }));
+    }
+    if (device.type === 'heater') {
+      const index = controls.findIndex(({ key }) => key === 'mode');
+      if (index > 1) controls.splice(1, 0, ...controls.splice(index, 1));
+    }
     return clone(controls);
   }
 
-  function addHistory(device, { id, at = Date.now(), title, detail, source = '设备', status = 'confirmed' }) {
+  function addHistory(device, { id, at = previewNow(), title, detail, source = '设备', status = 'confirmed' }) {
     const items = history.get(device.id) || [];
     items.unshift({ id: id || `event-${device.id}-${at}`, at, title, detail, source, status });
     history.set(device.id, items.slice(0, 60));
@@ -252,14 +311,17 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
   }
 
   function seedHistory(device, imported = false) {
+    for (const entry of device.nightCareHistory || []) addHistory(device, entry);
+    if (device.health) return;
+    for (const entry of device.careHistory || []) addHistory(device, entry);
     const at = device.updatedAt || device.readings.find((reading) => Number.isFinite(reading.updatedAt))?.updatedAt || null;
     // 初始历史只表现这台设备已有的能力与状态，不推导人数、活动或空间结论。
     if (at) addHistory(device, { id: `state-${device.id}`, at, title: typeof device.power === 'boolean' ? '设备状态已同步' : '收到感知信息', detail: stateDescription(device) });
-    if (imported) addHistory(device, { id: `connected-${device.id}`, at: Date.now(), title: '设备已接入', detail: device.providerId === 'int' ? '通过引元盒子自动加入家庭' : `通过${device.source}账号加入家庭`, source: device.providerId === 'int' ? '引元盒子' : '用户' });
+    if (imported) addHistory(device, { id: `connected-${device.id}`, at: previewNow(), title: '设备已接入', detail: device.providerId === 'int' ? '通过引元盒子自动加入家庭' : `通过${device.source}账号加入家庭`, source: device.providerId === 'int' ? '引元盒子' : '用户' });
     else if (at && device.type === 'presence' && device.readings.some((reading) => reading.key === 'presence' && typeof reading.value === 'boolean')) {
       addHistory(device, { id: `presence-${device.id}`, at: at - 38 * 60 * 1000, title: '在场状态变化', detail: '暂未检测到人在场' });
     }
-    if (!device.online) addHistory(device, { id: `offline-${device.id}`, at: imported ? Date.now() : seededAt - 10 * 60 * 1000, title: '设备暂时离线', detail: '保留最近一次确认的设备状态', status: 'failed' });
+    if (!device.online) addHistory(device, { id: `offline-${device.id}`, at: imported ? previewNow() : seededAt - 10 * 60 * 1000, title: '设备暂时离线', detail: '保留最近一次确认的设备状态', status: 'failed' });
   }
 
   function getHistory(id) {
@@ -272,6 +334,10 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
     const device = find(id);
     if (!device || period !== '24h' || !device.permissions.read) return null;
     const reading = device.readings.find((item) => item.key === key);
+    if (device.health) {
+      const points = device.health.trends?.[key];
+      return points && reading ? { key, label: reading.label, unit: reading.unit, points: clone(points) } : null;
+    }
     // null、unknown 和布尔感知不当作零点绘制；趋势终点固定于最后确认的该项读数。
     if (!reading || typeof reading.value !== 'number' || !Number.isFinite(reading.value)) return null;
     const endAt = reading.updatedAt || device.updatedAt;
@@ -293,7 +359,7 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
     if (disposed) return Promise.resolve(result(false, 'disposed', '设备连接已关闭', device));
     if (!device) return Promise.resolve(result(false, 'not-found', '设备已移除'));
     if ((options.expectedRevision != null && (device.controlRevision || 0) !== options.expectedRevision) || (options.expectedRoomId !== undefined && device.roomId !== options.expectedRoomId)) return Promise.resolve(result(false, 'changed', '设备已有后续调整，请按当前状态自定义调整', device));
-    if (!changes || typeof changes !== 'object' || Array.isArray(changes) || !Object.keys(changes).length || Object.keys(changes).some((key) => !['power', 'level', 'mode', 'colorTemperature', 'targetTemperature', 'fanMode', 'swingMode'].includes(key))) return Promise.resolve(result(false, 'invalid', '请选择有效的设备操作', device));
+    if (!changes || typeof changes !== 'object' || Array.isArray(changes) || !Object.keys(changes).length || Object.keys(changes).some((key) => !CONTROL_KEYS.includes(key))) return Promise.resolve(result(false, 'invalid', '请选择有效的设备操作', device));
     if (!device.permissions.control) return Promise.resolve(result(false, 'readonly', '此设备只提供感知信息', device));
     if (!device.online) return Promise.resolve(result(false, 'offline', '设备离线，请检查设备连接', device));
     if (device.pending) return Promise.resolve(result(false, 'busy', '正在等待设备反馈', device, { requestId: device.pending.id }));
@@ -302,7 +368,7 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
     for (const [key, value] of Object.entries(target)) {
       const control = controls.find((item) => item.key === key);
       if (!control) return Promise.resolve(result(false, 'unsupported', '设备暂不支持此操作', device));
-      if (key === 'power' && typeof value !== 'boolean') return Promise.resolve(result(false, 'invalid', '请选择开启或关闭', device));
+      if (control.type === 'toggle' && typeof value !== 'boolean') return Promise.resolve(result(false, 'invalid', '请选择开启或关闭', device));
       if (key === 'level' && (typeof value !== 'number' || !Number.isFinite(value) || value < control.min || value > control.max || !Number.isInteger(value))) return Promise.resolve(result(false, 'invalid', '亮度范围为1%至100%', device));
       if (key === 'colorTemperature' && (typeof value !== 'number' || !Number.isFinite(value) || value < control.min || value > control.max || Math.abs((value - control.min) / control.step - Math.round((value - control.min) / control.step)) > 1e-7)) return Promise.resolve(result(false, 'invalid', `色温范围为${control.min}K至${control.max}K，每次调节${control.step}K`, device));
       if (key === 'targetTemperature' && (typeof value !== 'number' || !Number.isFinite(value) || value < control.min || value > control.max || Math.abs((value - control.min) / control.step - Math.round((value - control.min) / control.step)) > 1e-7)) return Promise.resolve(result(false, 'invalid', `设定温度范围为${control.min}℃至${control.max}℃`, device));
@@ -325,9 +391,9 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
     device.controlRevision = requestRevision;
     if (!changedKeys.length) { emit('control-intent', [id], [device.roomId]); return Promise.resolve(result(true, 'unchanged', keys.length === 1 && keys[0] === 'power' ? (target.power ? '设备已开启' : '设备已关闭') : '设备已是当前设定', device, { requestRevision })); }
     const kind = keys.length === 1 ? keys[0] : 'control';
-    const requestId = `${kind}-${id}-${Date.now()}-${++controlSerial}`;
+    const requestId = `${kind}-${id}-${previewNow()}-${++controlSerial}`;
     const requestedRoom = device.roomId;
-    device.pending = { id: requestId, kind, desired: keys.length === 1 ? target[keys[0]] : clone(target), target: clone(target), startedAt: Date.now() };
+    device.pending = { id: requestId, kind, desired: keys.length === 1 ? target[keys[0]] : clone(target), target: clone(target), startedAt: previewNow() };
     emit(`${kind}-requested`, [id], [device.roomId]);
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
@@ -346,7 +412,7 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
           return;
         }
         Object.assign(device, target);
-        device.updatedAt = Date.now();
+        device.updatedAt = previewNow();
         const descriptions = [];
         if ('power' in target) descriptions.push(`已${target.power ? '开启' : '关闭'}`);
         if ('level' in target) descriptions.push(`亮度已调至${target.level}%`);
@@ -355,8 +421,10 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
         if ('fanMode' in target) descriptions.push(`风速已设为${getControls(id).find((control) => control.key === 'fanMode')?.options.find((option) => option.value === target.fanMode)?.label || target.fanMode}`);
         if ('swingMode' in target) descriptions.push(`扫风已设为${getControls(id).find((control) => control.key === 'swingMode')?.options.find((option) => option.value === target.swingMode)?.label || target.swingMode}`);
         if ('mode' in target) descriptions.push(`已切换${modeOptions(device).find((item) => item.value === target.mode)?.label || target.mode}模式`);
+        if ('oscillation' in target) descriptions.push(`已${target.oscillation ? '开启' : '关闭'}${device.oscillationAngle}°摆头`);
         const summaryText = `${device.name}${descriptions.join('，')}`;
-        const title = kind === 'power' ? `${device.name}${target.power ? '开启' : '关闭'}` : kind === 'level' ? '亮度已调整' : kind === 'colorTemperature' ? '色温已调整' : kind === 'mode' ? '运行模式已切换' : kind === 'targetTemperature' ? '设定温度已调整' : kind === 'fanMode' ? '风速已调整' : kind === 'swingMode' ? '扫风已调整' : '设备设定已调整';
+        const labels = { level: '亮度已调整', colorTemperature: '色温已调整', mode: '运行模式已切换', targetTemperature: '设定温度已调整', fanMode: '风速已调整', swingMode: '扫风已调整', oscillation: '摆头已调整' };
+        const title = kind === 'power' ? `${device.name}${target.power ? '开启' : '关闭'}` : labels[kind] || '设备设定已调整';
         const receipt = receiptFor(device, summaryText, target);
         const record = recordFor(device, summaryText, requestId, title);
         record.controlChange = { deviceId: id, roomId: requestedRoom, before, after, expectedRevision: requestRevision, guard: 'power' in before ? {} : typeof device.power === 'boolean' ? { power: device.power } : {} };
@@ -372,6 +440,19 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
 
   function requestPower(id, desired) { return requestControl(id, { power: desired }); }
 
+  function updateMedicationReminder(id, settings) {
+    const device = find(id);
+    if (device?.health?.kind !== 'medication' || disposed) return result(false, 'unavailable', '提醒设置暂不可用', device);
+    if (!device.online || !device.permissions.read) return result(false, 'unavailable', '设备暂不可用，请检查连接', device);
+    const times = device.health.plan.map(({ id }) => [id, settings?.times?.[id]]);
+    if (typeof settings?.enabled !== 'boolean' || times.some(([, time]) => typeof time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/u.test(time))) {
+      return result(false, 'invalid', '请为每项提醒选择有效时间', device);
+    }
+    device.health.reminder = { enabled: settings.enabled, times: Object.fromEntries(times) };
+    emit('medication-reminder-updated', [id], [device.roomId]);
+    return result(true, 'saved', '提醒设置已保存', device);
+  }
+
   function patch(id, changes, { silent = true } = {}) {
     reconcileRooms();
     const device = find(id);
@@ -380,9 +461,9 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
     if ('roomId' in changes && !hasRoom(changes.roomId)) return result(false, 'room-not-found', '空间已移除', device);
     const previousRoom = device.roomId;
     const previousState = stateDescription(device);
-    const controlKeys = ['power', 'level', 'mode', 'colorTemperature', 'targetTemperature', 'fanMode', 'swingMode'];
+    const controlKeys = CONTROL_KEYS;
     const previousControlValues = controlKeys.map((key) => device[key]);
-    const now = Date.now();
+    const now = previewNow();
     const allowed = ['roomId', 'name', 'online', 'mode', 'modeOptions', 'fanMode', 'fanModeOptions', 'swingMode', 'swingModeOptions', 'targetTemperatureMin', 'targetTemperatureMax', 'targetTemperatureStep', 'temperatureModes', 'colorTemperatureMin', 'colorTemperatureMax'];
     for (const key of allowed) if (key in changes) device[key] = clone(changes[key]);
     if (device.providerId === 'int' && 'roomId' in changes && previousRoom !== device.roomId) device.roomSource = 'user';
@@ -394,6 +475,7 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
     if (device.type === 'light' && Number.isFinite(changes.level)) device.level = Math.max(0, Math.min(100, changes.level));
     if (device.responseCapabilities.includes('色温') && Number.isFinite(changes.colorTemperature)) device.colorTemperature = changes.colorTemperature;
     if (device.responseCapabilities.includes('温度调节') && Number.isFinite(changes.targetTemperature)) device.targetTemperature = changes.targetTemperature;
+    if (device.responseCapabilities.includes('摆头') && typeof changes.oscillation === 'boolean') device.oscillation = changes.oscillation;
     const controlChanged = controlKeys.some((key, index) => device[key] !== previousControlValues[index]);
     if (controlChanged) device.controlRevision = (device.controlRevision || 0) + 1;
     const stateChanged = controlChanged || previousState !== stateDescription(device);
@@ -408,7 +490,7 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
     if (execution?.devices.some((item) => item.id === id) && (device.roomId !== previousRoom || controlKeys.some((key) => key in changes) || changes.online === false)) stopExecution();
     if (!silent) {
       const updated = snapshot(device), summaryText = `${device.name}状态已更新`;
-      const record = recordFor(device, summaryText, `device-${id}-${Date.now()}`);
+      const record = recordFor(device, summaryText, `device-${id}-${previewNow()}`);
       const receipt = receiptFor(device, summaryText);
       onRecord?.(clone(record)); onReceipt?.(clone(receipt));
       emit('device-updated', [id], [previousRoom, device.roomId]);
@@ -467,7 +549,7 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
         responseCapabilities: clone(item.responseCapabilities || []),
         capabilities: clone(item.capabilities || []), partial: item.partial || '',
         permissions: { read: item.permissions?.read !== false, control: item.permissions?.control === true },
-        updatedAt: item.updatedAt || (item.online !== false ? Date.now() : null),
+        updatedAt: item.updatedAt || (item.online !== false ? previewNow() : null),
       };
       device.readings = device.readings.map((reading) => ({ ...reading, updatedAt: reading.updatedAt || device.updatedAt }));
       if (device.providerId === 'int') device.roomSource = device.roomId ? item.roomSource === 'automatic' ? 'automatic' : 'user' : null;
@@ -480,7 +562,7 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
       devices.push(device); added.push(device); seedHistory(device, true);
     }
     if (added.length) {
-      onRecord?.({ experienceId: `devices-added-${Date.now()}`, title: `${added.length}台设备已加入家庭`, summary: added.map((device) => device.name).join('、'), status: '已完成', state: 'past', scope: 'family', label: '设备接入', text: '设备已加入家庭，空间位置以确认结果为准' });
+      onRecord?.({ experienceId: `devices-added-${previewNow()}`, title: `${added.length}台设备已加入家庭`, summary: added.map((device) => device.name).join('、'), status: '已完成', state: 'past', scope: 'family', label: '设备接入', text: '设备已加入家庭，空间位置以确认结果为准' });
       emit('devices-added', added.map((device) => device.id), added.map((device) => device.roomId));
     }
     return { ok: true, added: added.map(snapshot), skipped };
@@ -509,11 +591,11 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
         return;
       }
       right.level = 30;
-      right.updatedAt = Date.now();
+      right.updatedAt = previewNow();
       addHistory(right, { title: '亮度已调整', detail: '亮度已调至30%，设备反馈已确认', source: '小元' });
       execution.devices[1] = { ...execution.devices[1], current: 30, status: 'confirmed', feedback: '已调至30%' };
       execution.status = 'completed';
-      execution.updatedAt = Date.now();
+      execution.updatedAt = previewNow();
       const record = { experienceId: execution.id, title: '主卧灯光柔和了一些', summary: '两盏灯均已反馈30%亮度', status: '已完成', state: 'past', scope: 'family', label: '设备反馈已齐', text: '米家主卧左灯、涂鸦主卧右灯均已调至30%，已确认设备状态' };
       onRecord?.(clone(record));
       onReceipt?.(receiptFor(right, '两盏灯已调至30%'));
@@ -542,5 +624,5 @@ export function createDeviceStore({ seedMode = 'normal', initialDevices = null, 
 
   devices.forEach((device) => seedHistory(device));
 
-  return { getDevices, get, getSummary, getRoomCapabilities, getExecution, getControls, requestControl, requestPower, getHistory, getTrend, patch, moveRoomDevices, assignDevices, renameDevice, addDevices, subscribe, startPreviewExecution, destroy };
+  return { getDevices, get, getSummary, getRoomCapabilities, getExecution, getControls, requestControl, requestPower, updateMedicationReminder, getHistory, getTrend, patch, moveRoomDevices, assignDevices, renameDevice, addDevices, subscribe, startPreviewExecution, destroy };
 }

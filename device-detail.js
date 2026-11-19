@@ -1,4 +1,5 @@
 import { formatDeviceReading as readingText } from './device-readings.js?v=source-data-20261019';
+import { nextMedicationReminder, RADAR_IMAGE } from './device-demo-catalog.js?v=care-device-sources-20261118';
 
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const timeFormat = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' });
@@ -53,7 +54,8 @@ export function createDeviceDetail({ page, store, connections, getRooms, setView
   const findControl = (key, option, direction) => [...page.querySelectorAll('[data-dd-control]')].find((element) => element.dataset.ddControl === key && (option === undefined || element.dataset.ddOption === option) && (direction === undefined || element.dataset.ddDirection === direction));
   const sheetQuery = (selector) => sheet?.querySelector(selector);
   const roomName = (device) => getRooms?.().find((room) => room.id === device.roomId)?.name || device.roomName || '未设置空间';
-  const accountExpired = (device) => connections?.getAccount?.(device.accountId)?.status === 'expired';
+  const deviceAccount = (device) => device.accountId ? connections?.getAccount?.(device.accountId) : null;
+  const accountExpired = (device) => deviceAccount(device)?.status === 'expired';
   const closeSheet = () => sheet?.close();
   const focusAction = (action) => { if (visible) query(`[data-dd-action="${action}"]`)?.focus({ preventScroll: true }); };
 
@@ -84,13 +86,16 @@ export function createDeviceDetail({ page, store, connections, getRooms, setView
     return capabilities.map((capability) => labels[capability] || capability).join('、') || '设备状态信息';
   }
 
-  function renderIdentity(device) {
-    const expired = accountExpired(device);
+  function renderIdentity(device, account) {
+    const expired = account?.status === 'expired';
     const health = expired ? '账号授权失效' : device.online ? '在线' : '离线';
     const state = expired ? ' is-expired' : device.online ? '' : ' is-offline';
     const supportNote = device.supportNote || device.partial || (device.partiallySupported ? `当前接入支持${capabilityDescription(device)}` : '');
     const source = !device.source || ['unknown', 'unavailable'].includes(String(device.source).toLowerCase()) ? '已接入设备' : device.source;
-    return `<section class="dd-identity" aria-label="设备信息"><div class="dd-product-image">${device.image ? `<img src="${e(device.image)}" alt="${e(device.name || '设备')}">` : `<span class="dd-product-placeholder">${glyph('device')}</span>`}</div><div class="dd-identity-copy"><div class="dd-meta"><span class="dd-health${state}">${health}</span><span class="dd-meta-space">${e(roomName(device))}</span><span class="dd-meta-source">${e(source)}</span></div><p class="dd-updated">${device.updatedAt ? `${device.online ? '更新于' : '最后更新'} ${fullTime(device.updatedAt)}` : '等待设备更新'}</p></div></section>${expired ? '<p class="dd-notice is-warning">账号授权已失效，重新连接后可继续查看和控制</p>' : !device.online ? `<p class="dd-notice is-warning">${device.updatedAt ? '设备离线，以下为最后确认的信息' : '设备离线，连接恢复后将继续更新'}</p>` : ''}${supportNote ? `<p class="dd-notice">${e(supportNote)}</p>` : ''}`;
+    const accountLabel = account?.name ? `${source}·${account.name}` : source;
+    const separator = '<span class="dd-meta-separator" aria-hidden="true">｜</span>';
+    const updated = device.health ? '' : `<p class="dd-updated">${device.updatedAt ? `${device.online ? '更新于' : '最后更新'} ${fullTime(device.updatedAt)}` : '等待设备更新'}</p>`;
+    return `<section class="dd-identity" aria-label="设备信息"><div class="dd-product-image">${device.image ? `<img src="${e(device.image)}" alt="${e(device.name || '设备')}">` : `<span class="dd-product-placeholder">${glyph('device')}</span>`}</div><div class="dd-identity-copy"><div class="dd-meta"><span class="dd-health${state}">${health}</span>${separator}<span class="dd-meta-space">${e(roomName(device))}</span>${separator}<span class="dd-meta-source">${e(accountLabel)}</span></div>${updated}</div></section>${expired ? '<p class="dd-notice is-warning">账号授权已失效，重新连接后可继续查看和控制</p>' : !device.online ? `<p class="dd-notice is-warning">${device.updatedAt ? '设备离线，以下为最后确认的信息' : '设备离线，连接恢复后将继续更新'}</p>` : ''}${supportNote ? `<p class="dd-notice">${e(supportNote)}</p>` : ''}`;
   }
 
   function renderToggle(device, control) {
@@ -115,7 +120,7 @@ export function createDeviceDetail({ page, store, connections, getRooms, setView
     const target = pendingValue(device, control.key);
     const draft = stepperDrafts.get(stepperDraftKey(device.id, control.key));
     const value = draft?.value ?? target ?? control.value;
-    const note = target !== undefined ? `当前设定 ${valueText(control, control.value)} · 目标 ${valueText(control, target)}，等待反馈` : draft ? `当前设定 ${valueText(control, control.value)} · 目标 ${valueText(control, draft.value)}，待提交` : accountExpired(device) ? '账号授权已失效' : !device.online ? '设备离线，连接恢复后可调节' : device.pending ? '' : control.disabledReason || '';
+    const note = target !== undefined ? `当前设定 ${valueText(control, control.value)} · 目标 ${valueText(control, target)}，等待反馈` : draft ? `当前设定 ${valueText(control, control.value)} · 目标 ${valueText(control, draft.value)}，待提交` : accountExpired(device) ? '账号授权已失效' : !device.online ? '设备离线，连接恢复后可调节' : device.pending ? '' : control.disabledReason || (device.type === 'heater' ? `${min}–${max} ℃ · 每档 ${control.step} ℃` : '');
     return `<div class="dd-stepper-block"><div class="dd-range-top"><label>${e(control.label)}</label></div><div class="dd-stepper"><button class="dd-stepper-minus" data-dd-control="${e(control.key)}" data-dd-type="stepper" data-dd-direction="-1" aria-label="降低${e(control.label)}" aria-disabled="${Number(value) <= min}" ${control.disabled ? 'disabled' : ''}>${glyph('minus')}</button><div class="dd-stepper-value" data-dd-stepper-value="${e(control.key)}"><strong>${e(numberText(value))}</strong><small>${e(control.unit)}</small></div><button class="dd-stepper-plus" data-dd-control="${e(control.key)}" data-dd-type="stepper" data-dd-direction="1" aria-label="提高${e(control.label)}" aria-disabled="${Number(value) >= max}" ${control.disabled ? 'disabled' : ''}>${glyph('plus')}</button></div><p class="dd-stepper-note dd-control-note" data-dd-note="${e(control.key)}">${e(note)}</p></div>`;
   }
 
@@ -128,7 +133,7 @@ export function createDeviceDetail({ page, store, connections, getRooms, setView
 
   function modeGlyph(option) {
     const name = String(option.label || option.value).toLowerCase();
-    const known = { '自动': 'auto', auto: 'auto', '标准': 'standard', standard: 'standard', '睡眠': 'sleep', sleep: 'sleep', '制冷': 'cool', cool: 'cool', '制热': 'heat', heat: 'heat', '除湿': 'dry', dry: 'dry', '送风': 'fan', fan: 'fan' };
+    const known = { '自动': 'auto', auto: 'auto', '标准': 'standard', standard: 'standard', '睡眠': 'sleep', sleep: 'sleep', '制冷': 'cool', cool: 'cool', '制热': 'heat', heat: 'heat', '除湿': 'dry', dry: 'dry', '送风': 'fan', fan: 'fan', '自然风': 'fan', '暖风': 'heat', '热风': 'heat' };
     return known[name] ? glyph(known[name]) : '';
   }
 
@@ -161,9 +166,55 @@ export function createDeviceDetail({ page, store, connections, getRooms, setView
     if (device.type === 'presence') {
       const presence = readings.find((reading) => reading.key === 'presence');
       const valid = typeof presence?.value === 'boolean';
-      return `<section class="dd-presence${valid && presence.value ? ' is-present' : ''}" aria-label="在场信息"><div class="dd-presence-symbol">${glyph(valid && presence.value ? 'presence' : 'empty')}</div><strong>${valid ? presence.value ? '检测到人在场' : '暂未检测到人在场' : '等待在场信息'}</strong><p>${valid ? `${device.online ? '更新于' : '最后感知于'} ${fullTime(presence.updatedAt || device.updatedAt)}` : '连接恢复后将继续感知'}</p></section>`;
+      const motion = device.image === RADAR_IMAGE && valid && presence.value ? readings.filter((reading) => ['posture', 'motion'].includes(reading.key)) : [];
+      return `<section class="dd-presence${valid && presence.value ? ' is-present' : ''}" aria-label="在场信息"><div class="dd-presence-symbol">${glyph(valid && presence.value ? 'presence' : 'empty')}</div><strong>${valid ? presence.value ? '检测到人在场' : '暂未检测到人在场' : '等待在场信息'}</strong><p>${valid ? `${device.online ? '更新于' : '最后感知于'} ${fullTime(presence.updatedAt || device.updatedAt)}` : '连接恢复后将继续感知'}</p></section>${motion.length ? `<div class="dd-presence-metrics">${renderMetrics(motion, (item) => fullTime(item.updatedAt))}</div>` : ''}`;
     }
-    return `<section class="dd-metrics" aria-label="设备读数">${readings.map((reading) => `<div class="dd-metric${Number.isFinite(reading.value) ? '' : ' is-text'}" data-key="${e(reading.key)}"><span>${e(reading.label)}</span><strong>${e(Number.isFinite(reading.value) ? numberText(reading.value) : readingText(reading))}<small>${Number.isFinite(reading.value) ? e(reading.unit) : ''}</small></strong><small>${device.online ? '当前读数' : '最后读数'}</small></div>`).join('')}</section>`;
+    return renderMetrics(readings, () => device.online ? '当前读数' : '最后读数');
+  }
+
+  function renderMetrics(readings, caption = () => '') {
+    return `<div class="dd-metrics" aria-label="设备读数">${readings.map((reading) => {
+      const numeric = Number.isFinite(reading.value), note = caption(reading);
+      return `<div class="dd-metric${numeric ? '' : ' is-text'}" data-key="${e(reading.key)}"><span>${e(reading.label)}</span><strong>${e(numeric ? numberText(reading.value) : readingText(reading))}${numeric ? `<small>${e(reading.unit)}</small>` : ''}</strong>${note ? `<small>${e(note)}</small>` : ''}</div>`;
+    }).join('')}</div>`;
+  }
+
+  function renderMeasurement(device) {
+    const [latest, ...previous] = device.health.measurements;
+    const [first, second, pulse] = latest.readings;
+    const pressure = first.key === 'systolic';
+    const main = pressure ? [{ ...first, key: 'bloodPressure', label: '血压（收缩压／舒张压）', value: `${first.value}/${second.value}`, text: `${first.value}/${second.value} mmHg` }, pulse] : latest.readings;
+    return `<section class="dd-health-section"><div class="dd-health-heading"><h2>最近一次测量</h2><span>${fullTime(latest.at)}${latest.context ? ` · ${e(latest.context)}` : ''}</span></div>${renderMetrics(main)}</section><section class="dd-section"><div class="dd-section-heading"><h2>测量历史</h2></div><div class="dd-health-list">${previous.map(({ at, readings, context }) => {
+      const summary = pressure ? `${readings[0].value}/${readings[1].value} mmHg · 脉搏 ${readings[2].text}` : readings.map((reading) => `${reading.label} ${reading.text}`).join(' · ');
+      return `<div class="dd-health-list-row"><span>${fullTime(at)}${context ? ` · ${e(context)}` : ''}</span><strong>${e(summary)}</strong></div>`;
+    }).join('')}</div></section>`;
+  }
+
+  function renderSleep(device) {
+    const { start, end, segments } = device.health.session;
+    const [duration, ...metrics] = device.readings;
+    const timeline = segments.map(({ state, minutes }) => `<span class="${state === '睡眠' ? 'is-asleep' : 'is-awake'}" style="flex-grow:${minutes}"></span>`).join('');
+    const summary = segments.map(({ state, minutes }) => `${state}${minutes}分钟`).join('，');
+    const bedRecords = historyEntries().filter(entry => ['night-bed-exit', 'night-bed-return'].includes(entry.id) && entry.at >= start && entry.at <= end);
+    const bedHistory = bedRecords.length ? `<section class="dd-section"><div class="dd-section-heading"><h2>夜间在床记录</h2></div>${historyMarkup(bedRecords)}</section>` : '';
+    return `<section class="dd-health-section"><div class="dd-health-heading"><h2>最近一晚睡眠</h2><span>${fullTime(end)}结束</span></div><div class="dd-sleep-report"><span>睡眠时长</span><strong>${e(duration.text)}</strong><div class="dd-sleep-strip" role="img" aria-label="${e(summary)}">${timeline}</div><div class="dd-sleep-times"><time>${fullTime(start)}</time><time>${fullTime(end)}</time></div><div class="dd-sleep-legend"><span>睡眠</span><span>清醒</span></div></div>${renderMetrics(metrics)}</section>${bedHistory}`;
+  }
+
+  function renderMedication(device) {
+    const { plan, reminder, records } = device.health;
+    const upcoming = nextMedicationReminder(reminder);
+    const history = records.map((entry) => entry.source === '药盒' ? entry : { ...entry, source: '' });
+    return `<section class="dd-health-section"><div class="dd-health-heading"><h2>每日用药计划</h2></div><div class="dd-health-list">${plan.map(({ time, label }) => `<div class="dd-health-list-row"><strong>${e(label)}</strong><time>${e(time)}</time></div>`).join('')}</div></section><section class="dd-section"><div class="dd-section-heading"><h2>用药提醒</h2><button class="dd-text-button" data-dd-action="reminder" ${!device.online || !device.permissions.read ? 'disabled' : ''}>提醒设置${glyph('chevron')}</button></div><div class="dd-health-list"><div class="dd-health-list-row"><span>${upcoming ? '下次提醒' : '当前状态'}</span><strong>${e(upcoming || '提醒已关闭')}</strong></div></div></section><section class="dd-section"><div class="dd-section-heading"><h2>用药记录</h2></div>${historyMarkup(history)}</section>`;
+  }
+
+  function renderHealth(device) {
+    switch (device.health.kind) {
+      case 'measurement': return renderMeasurement(device);
+      case 'sleep': return renderSleep(device);
+      case 'medication': return renderMedication(device);
+      case 'wearable': return `<section class="dd-health-section"><div class="dd-health-heading"><h2>最近同步</h2><span>${fullTime(device.readings[0].updatedAt)}</span></div>${renderMetrics(device.readings, (reading) => fullTime(reading.updatedAt))}</section>${renderTrend(device)}`;
+      default: return '';
+    }
   }
 
   function executionFor(device) {
@@ -198,7 +249,7 @@ export function createDeviceDetail({ page, store, connections, getRooms, setView
   }
 
   function renderTrend(device) {
-    const keys = (device.readings || []).filter((reading) => Number.isFinite(reading.value)).map((reading) => reading.key);
+    const keys = device.health ? Object.keys(device.health.trends || {}) : (device.readings || []).filter((reading) => Number.isFinite(reading.value)).map((reading) => reading.key);
     if (!keys.length || !store.getTrend) return '';
     if (!keys.includes(trendKey)) trendKey = keys[0];
     const trend = store.getTrend(device.id, trendKey, '24h');
@@ -225,8 +276,9 @@ export function createDeviceDetail({ page, store, connections, getRooms, setView
     if (draggingKey) { renderQueued = true; return; }
     const device = store.get(deviceId);
     if (!device) { if (visible) { toast('设备已移除'); back(); } return; }
+    const account = deviceAccount(device);
     const controls = currentControls(device), execution = executionFor(device), history = historyEntries();
-    const signature = JSON.stringify({ device, controls, execution, history, trendKey, expired: accountExpired(device) });
+    const signature = JSON.stringify({ device, controls, execution, history, trendKey, accountName: account?.name, accountStatus: account?.status });
     if (!force && lastSignature === signature) return;
     const scroll = query('.dd-scroll'), top = scroll.scrollTop;
     const focused = document.activeElement;
@@ -237,7 +289,7 @@ export function createDeviceDetail({ page, store, connections, getRooms, setView
     query('.dd-heading').textContent = device.name;
     page.dataset.deviceType = device.type || 'device';
     query('[data-dd-action="settings"]').setAttribute('aria-label', `${device.name}设置`);
-    scroll.innerHTML = `${renderIdentity(device)}${renderControls(device, controls)}${renderContext(device, execution)}${renderTrend(device)}${renderHistory()}`;
+    scroll.innerHTML = `${renderIdentity(device, account)}${device.health ? renderHealth(device) : `${renderControls(device, controls)}${renderContext(device, execution)}${renderTrend(device)}${renderHistory()}`}`;
     scroll.scrollTop = top;
     lastSignature = signature;
     if (continuesControl && controlFocus) {
@@ -370,6 +422,25 @@ export function createDeviceDetail({ page, store, connections, getRooms, setView
     sheetQuery('#dd-mode-save').onclick = () => { closeSheet(); requestControl(key, modeDraft); };
   }
 
+  function showReminderSettings() {
+    const device = store.get(deviceId);
+    if (device?.health?.kind !== 'medication' || !device.online || !device.permissions.read) return;
+    const { plan, reminder } = device.health;
+    openSheet('提醒设置', `<form class="dd-reminder-form" id="dd-reminder-form"><label class="dd-reminder-switch"><span>每日用药提醒</span><input name="enabled" type="checkbox" role="switch" ${reminder.enabled ? 'checked' : ''}></label><div class="dd-reminder-times">${plan.map(({ id, label }) => `<label><span>${e(label)}提醒</span><input class="text-input" type="time" name="${e(id)}" value="${e(reminder.times[id])}" required></label>`).join('')}</div><p class="field-hint">演示设置保存在当前体验中。</p><p class="form-error" data-reminder-error role="alert"></p><div class="dialog-actions"><button class="secondary-button" data-reminder-cancel type="button">取消</button><button class="primary-button" type="submit">保存设置</button></div></form>`, { restoreFocus: () => { if (deviceId === device.id) focusAction('reminder'); } });
+    sheet.dataset.content = 'device-detail-reminder';
+    const form = sheetQuery('#dd-reminder-form');
+    form.querySelector('[data-reminder-cancel]').onclick = closeSheet;
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const times = Object.fromEntries(plan.map(({ id }) => [id, data.get(id)]));
+      const result = store.updateMedicationReminder(device.id, { enabled: data.has('enabled'), times });
+      if (!result.ok) { form.querySelector('[data-reminder-error]').textContent = result.message; return; }
+      closeSheet();
+      toast(result.message);
+    };
+  }
+
   function click(event) {
     const trend = event.target.closest('[data-dd-trend]');
     if (trend) { trendKey = trend.dataset.ddTrend; refresh(true); return; }
@@ -389,6 +460,7 @@ export function createDeviceDetail({ page, store, connections, getRooms, setView
     if (action.dataset.ddAction === 'metrics') showMetrics();
     if (action.dataset.ddAction === 'execution') showExecution();
     if (action.dataset.ddAction === 'mode') showModes(action.dataset.ddKey);
+    if (action.dataset.ddAction === 'reminder') showReminderSettings();
   }
 
   function input(event) {

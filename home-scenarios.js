@@ -19,19 +19,23 @@ const clone = value => structuredClone(value);
 const basePolicy = () => ({ focusIds: null, priorityDeviceIds: [], protectIds: [], keepLights: false, quiet: false, durationMs: null, reminder: null });
 const mergePolicy = (policy, patch = {}) => ({ ...clone(policy), ...clone(patch) });
 
+import {nextMedicationReminder} from './device-demo-catalog.js';
+
 /** Shared local data and a small intent model demonstrate the care loop. */
-export function createHomeScenarios({ seedInsights = true, container, store, getRooms = () => [], getPeople = () => [], getMemories = () => [], onRemember, openSheet, toast, onService, onRecord, onServiceDetail } = {}) {
+export function createHomeScenarios({ readOnly = false, seedInsights = true, container, store, getRooms = () => [], getPeople = () => [], getMemories = () => [], onRemember, openSheet, toast, onService, onRecord, onServiceDetail } = {}) {
   const doc = container.ownerDocument, sheet = doc.querySelector('#sheet');
   const insights = createScenarioInsights({ sheet, getMemories });
   const jobs = new Map(), preferences = new Map(), timers = new Set();
-  let serial = 0, destroyed = false, currentPanel = null, returnHandler = null, lastPerson = '', proposal = null;
+  let serial = 0, destroyed = false, currentPanel = null, returnHandler = null, lastPeople = [], proposal = null;
   const e = escapeHTML, now = () => previewNow(), q = selector => sheet.querySelector(selector);
   const rooms = () => (getRooms() || []).filter(room => room?.id && room?.name);
   const people = () => (getPeople() || []).filter(person => person?.id && person?.name && person.enabled !== false);
   const devices = () => store.getDevices();
   const def = id => definitions.find(item => item.id === id);
   const roomName = id => rooms().find(room => room.id === id)?.name || '原空间已移除';
-  const personName = id => people().find(person => person.id === id)?.name || '家里的长辈';
+  const selectedIds = value => Array.isArray(value) ? value : value ? [value] : [];
+  const personName = value => selectedIds(value).map(id => people().find(person => person.id === id)?.name || '原成员').join('、') || '家里的长辈';
+  const validSelection = ids => ids.length > 0 && ids.every(id => people().some(person => person.id === id));
   const deviceLabel = device => device.name.startsWith(roomName(device.roomId)) ? device.name : `${roomName(device.roomId)}${device.name}`;
   const active = job => Boolean(job && ['active', 'running', 'partial'].includes(job.state));
   const editable = job => Boolean(job && (job.state === 'draft' || active(job)));
@@ -39,9 +43,9 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
   const currentJob = id => jobs.get(id);
   const schedule = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); if (!destroyed) fn(); }, ms); timers.add(id); return id; };
   const presence = () => evaluateHomePresence(rooms(), devices());
-  const prefKey = (id, personId) => `${id}:${id === 'elder' ? personId : 'family'}`;
+  const prefKey = (id, personId) => `${id}:${id === 'elder' ? JSON.stringify([...selectedIds(personId)].sort()) : 'family'}`;
   const sceneMemory = job => {
-    const item = preferences.get(prefKey(job.scenarioId, job.personId));
+    const item = preferences.get(prefKey(job.scenarioId, job.personIds));
     return item && (getMemories() || []).find(memory => memory.id === item.memoryId);
   };
   const validMemory = memory => memory?.enabled === true && !memory.expired && memory.understanding === 'clear' && memory.visibility === 'family';
@@ -50,7 +54,7 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
     const memory = item && (getMemories() || []).find(memory => memory.id === item.memoryId && validMemory(memory) && memory.context?.includes(def(id).title));
     if (!memory) return null;
     if (memory.text !== item.storedText) {
-      const revised = understand({ scenarioId: id, personId, policy: basePolicy() }, memory.text);
+      const revised = understand({ scenarioId: id, personIds: selectedIds(personId), policy: basePolicy() }, memory.text);
       if (revised.question || revised.commands.length) return null;
       item.patch = revised.patch; item.text = memory.text; item.storedText = memory.text;
       insights.note({ key: prefKey(id, personId), memory, effect: futureEffect(id, revised.patch), source: memory.evidence?.[0]?.text || memory.text, semanticKey: policyKey(revised.patch) });
@@ -89,9 +93,28 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
   function knownMemories(id, policy, personId, snap) {
     const tags = id === 'away' ? /外出|离家|照看/u : id === 'sleep' ? /睡眠|休息|睡前|夜间/u : /关怀|照料|提醒|午休/u;
     const subjects = new Set(['家庭共同安排', '家庭空间', ...(id === 'elder' && personId ? [personName(personId)] : [])]);
-    return (getMemories() || []).filter(memory => validMemory(memory) && subjects.has(memory.subject) && tags.test(`${memory.text} ${memory.context}`) && (!memory.roomId || snap.scope.some(room => room.id === memory.roomId))).filter(memory => !/客厅.*休息/u.test(memory.text) || snap.resting.some(room => room.id === 'living') || policy.focusIds?.includes('living')).slice(0, 2);
+    return (getMemories() || []).filter(memory => validMemory(memory) && (memory.personId ? id === 'elder' && memory.personId === personId : subjects.has(memory.subject)) && (id === 'elder' && memory.personId === personId && memory.careTopic || tags.test(`${memory.text} ${memory.context}`)) && (!memory.roomId || snap.scope.some(room => room.id === memory.roomId))).filter(memory => !/客厅.*休息/u.test(memory.text) || snap.resting.some(room => room.id === 'living') || policy.focusIds?.includes('living')).sort((a,b) => Number(Boolean(b.personId)) - Number(Boolean(a.personId))).slice(0, id === 'elder' ? 3 : 2);
   }
   function plan(id, policy, personId, job = null) {
+    const selected = selectedIds(personId);
+    if (id === 'elder' && selected.length > 1) {
+      const defaults = basePolicy();
+      const sharedPatch = Object.fromEntries(Object.entries(policy).filter(([key,value]) => JSON.stringify(value) !== JSON.stringify(defaults[key])));
+      const plans = selected.map(memberId => plan(id, mergePolicy(initialPolicy(id, memberId), {...sharedPatch, ...job?.patch}), memberId, job));
+      const references = plans.flatMap(p => p.references);
+      const items = plans[0].items.map((item, index) => {
+        const lines = plans.map(p => {
+          const {detail, note} = p.items[index];
+          const description = detail.startsWith(p.subject) ? detail : `${p.subject}：${detail}`;
+          return note ? `${description} ${note}` : description;
+        });
+        return {...item, detail: lines.join('\n'), note: ''};
+      });
+      return {...plans[0], items, subject: personName(selected), lead: `这次一起照应${personName(selected)}，各自的安排如下。`,
+        remembered: pref(id,selected), memories: plans.flatMap(p => p.memories),
+        references: references.filter((row,i) => references.findIndex(other => other.title === row.title && other.value === row.value) === i)};
+    }
+    personId = selected[0] || '';
     const s = snapshot(id, policy), names = s.scope.map(room => room.name).join('、'), subject = personName(personId);
     const remembered = job?.pendingMemoryDisable ? null : pref(id, personId), memories = knownMemories(id, policy, personId, s);
     const priority = (policy.priorityDeviceIds || []).map(id => s.related.find(device => device.id === id)).filter(Boolean);
@@ -122,6 +145,17 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
         { title: '接续生活安排', detail: policy.quiet ? '尊重家人自己的生活节奏，不固定增加喝水或活动提醒；有明确需要时再补充。' : reminder ? '按已明确的生活安排准备提醒，避免重复打扰；实际提醒结果单独反馈。' : '接续已有的生活安排；需要新增提醒时，先明确内容与时机，减少无依据的打扰。', note: reminderNote || (policy.quiet ? '按你已确认的安排，不增加固定生活提醒' : '') },
         { title: '留意需要照应的变化', detail: '结合可用的活动与环境信息核对异常变化，判断是否需要帮助；重要情况再与你沟通。' },
       ];
+      if (personId) items[2].detail = '留意活动变化，需要核实就先问一声。有人回应，记下对方具体怎么说。没有回应，保留为待核实。';
+      const slots = {environment: 0, routine: 1, check: 2};
+      for (const memory of memories) {
+        const slot = slots[memory.careTopic];
+        if (memory.personId === personId && slot !== undefined && (slot !== 1 || (!reminder && !policy.quiet))) items[slot].detail = memory.text;
+      }
+      const pillbox = s.readable.find(device => device.health?.kind === 'medication' && device.health.subject?.id === personId);
+      if (pillbox && !reminder && !policy.quiet) {
+        const next = nextMedicationReminder(pillbox.health.reminder, now());
+        items[1].note = next ? `药盒下次提醒：${next}` : '药盒提醒已关闭';
+      }
     }
     if (policy.focusIds) lead += ` 这次重点关注${names || '原空间（待核对）'}。`;
     if (remembered) lead += ' 已接上你之前确认的照料安排。';
@@ -154,8 +188,27 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
     if (patch.durationMs) changes.push(`按约定照料${patch.durationMs / 60000}分钟`);
     return `下次${def(id).title}时，会${changes.join('；') || '参考这一安排'}。`;
   }
-  function personPicker(selected) {
-    return `<label class="hsc-person-picker"><span>需要照应的家人</span><select id="hsc-person" aria-label="关怀对象"><option value="">请选择</option>${people().map(person => `<option value="${e(person.id)}" ${selected === person.id ? 'selected' : ''}>${e(person.name)}</option>`).join('')}</select></label>${!people().length ? '<p class="hsc-field-hint">还没有可选人物，请先在“我的—人物识别”补充人物资料。</p>' : ''}`;
+  function personTags(ids, removable = false) {
+    return ids.map(id => removable
+      ? `<button type="button" class="hsc-person-tag" data-hsc-remove="${e(id)}" aria-label="移除${e(personName(id))}"><span>${e(personName(id))}</span><i aria-hidden="true">×</i></button>`
+      : `<span class="hsc-person-tag">${e(personName(id))}</span>`).join('');
+  }
+  function personPicker(ids) {
+    return `<div class="hsc-person-field"><span>需要照应的家人</span><div class="hsc-person-tags">${personTags(ids,true)}</div><button class="hsc-person-trigger" type="button" id="hsc-person" aria-label="选择关怀对象" aria-haspopup="dialog">${ids.length ? '' : '请选择'}<img src="assets/mine-row-chevron.svg" alt=""></button></div>`;
+  }
+  function choosePeople(ids, {title, allowEmpty, accept, cancel}) {
+    currentPanel = {type:'pick-people'};
+    const elder = person => ['爷爷','奶奶','外公','外婆'].includes(person.role);
+    const options = people().sort((a,b) => Number(elder(b)) - Number(elder(a)));
+    const rows = options.map(person => `<label class="ds-batch-device hsc-person-row"><input type="checkbox" name="hsc-member" value="${e(person.id)}" ${ids.includes(person.id) ? 'checked' : ''}><span>${e(person.name)}</span><i class="ds-choice-mark" aria-hidden="true"></i></label>`).join('');
+    openSheet(title, `<fieldset class="ds-batch-devices"><legend class="ds-visually-hidden">可多选家人</legend>${rows}</fieldset>${rows ? '' : '<p class="hsc-field-hint">暂无可选家人，请先在「我的」中补充家庭成员。</p>'}<div class="dialog-actions"><button class="secondary-button" id="hsc-person-cancel">取消</button><button class="primary-button" id="hsc-person-save">确定</button></div>`, {onCancel:cancel});
+    frame('home-person-picker');
+    const read = () => [...sheet.querySelectorAll('[name="hsc-member"]:checked')].map(input => input.value);
+    const sync = () => { q('#hsc-person-save').disabled = !allowEmpty && !read().length; };
+    sheet.querySelector('fieldset').onchange = sync;
+    q('#hsc-person-cancel').onclick = cancel;
+    q('#hsc-person-save').onclick = () => accept(read().filter(id => people().some(person => person.id === id)));
+    sync();
   }
   function frame(content) { sheet.dataset.content = content; }
   function closeFlow() {
@@ -164,24 +217,26 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
     sheet.close(); back?.();
   }
   function openStart(id, existingDraft = null) {
-    const d = def(id), personId = id === 'elder' && people().some(person => person.id === lastPerson) ? lastPerson : '';
-    const draft = existingDraft || { scenarioId: id, personId, state: 'draft', policy: initialPolicy(id, personId), patch: {}, commands: [], supplements: [], pendingPreference: null, busy: false };
-    currentPanel = { type: 'start', id, personId: draft.personId, job: draft }; proposal = null;
-    openSheet(d.title, `${id === 'elder' ? personPicker(draft.personId) : ''}<div id="hsc-start-plan"></div><p class="hsc-start-note">${id === 'away' ? '回家后可结束本次照看' : id === 'sleep' ? '休息结束后可结束守护' : '需要时可结束关怀'}</p><p id="hsc-start-error" class="hsc-field-hint" role="alert" hidden></p><div class="dialog-actions hsc-start-actions"><button type="button" class="secondary-button" id="hsc-start-supplement">补充或纠正</button><button type="button" class="primary-button" id="hsc-start">${d.action}</button></div>`, { onCancel: closeFlow, restoreFocus: () => entranceFocus(id) });
+    const d = def(id), personIds = id === 'elder' ? lastPeople.filter(id => people().some(person => person.id === id)) : [];
+    const draft = existingDraft || { scenarioId: id, personIds, state: 'draft', policy: initialPolicy(id, personIds), patch: {}, commands: [], supplements: [], pendingPreference: null, busy: false };
+    currentPanel = { type: 'start', id, job: draft }; proposal = null;
+    openSheet(d.title, `${id === 'elder' ? personPicker(draft.personIds) : ''}<div id="hsc-start-plan"></div><p class="hsc-start-note">${id === 'away' ? '回家后可结束本次照看' : id === 'sleep' ? '休息结束后可结束守护' : '需要时可结束关怀'}</p><p id="hsc-start-error" class="hsc-field-hint" role="alert" hidden></p><div class="dialog-actions hsc-start-actions"><button type="button" class="secondary-button" id="hsc-start-supplement">补充或纠正</button><button type="button" class="primary-button" id="hsc-start">${d.action}</button></div>`, { onCancel: closeFlow, restoreFocus: () => entranceFocus(id) });
     frame('home-scenario'); renderStart(draft);
-    if (id === 'elder') q('#hsc-person').onchange = event => {
-      if (currentPanel?.type !== 'start' || draft.busy) return;
-      const nextPerson = event.target.value;
-      if (draft.personId && draft.personId !== nextPerson) {
-        draft.patch = {}; draft.commands = []; draft.supplements = []; draft.pendingPreference = null; draft.pendingMemoryDisable = null;
-        toast?.('关怀对象已更换，请重新确认补充安排');
-      }
-      draft.personId = nextPerson; currentPanel.personId = nextPerson;
-      draft.policy = mergePolicy(initialPolicy(id, nextPerson), draft.patch); renderStart(draft);
-    };
+    if (id === 'elder') {
+      const back = () => { openStart(id, draft); q('#hsc-person').focus({preventScroll:true}); };
+      const accept = ids => {
+        if (prefKey(id,ids) !== prefKey(id,draft.personIds)) {
+          if (draft.supplements.length) toast?.('关怀对象已更换，请重新确认补充安排');
+          Object.assign(draft, {personIds:ids, patch:{}, commands:[], supplements:[], pendingPreference:null, pendingMemoryDisable:null, policy:initialPolicy(id,ids)});
+        }
+        back();
+      };
+      q('#hsc-person').onclick = () => choosePeople(draft.personIds,{title:'选择关怀对象',allowEmpty:true,accept,cancel:back});
+      sheet.querySelectorAll('[data-hsc-remove]').forEach(button => button.onclick = () => accept(draft.personIds.filter(id => id !== button.dataset.hscRemove)));
+    }
     q('#hsc-start-supplement').onclick = () => openSupplement(draft, () => openStart(id, draft));
     q('#hsc-start').onclick = async () => {
-      if (draft.busy || (id === 'elder' && !people().some(item => item.id === draft.personId))) return;
+      if (draft.busy || (id === 'elder' && !validSelection(draft.personIds))) return;
       draft.busy = true; renderStart(draft);
       if (draft.pendingMemoryDisable) {
         const result = await onRemember?.({ memoryId: draft.pendingMemoryDisable, enabled: false });
@@ -198,20 +253,20 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
         }
       }
       if (destroyed || currentPanel?.job !== draft || !sheet.open) return;
-      if (id === 'elder') lastPerson = draft.personId;
-      sheet.close(); currentPanel = null; start(id, draft.personId, draft); openJob(jobs.get(id));
+      if (id === 'elder') lastPeople = [...draft.personIds];
+      sheet.close(); currentPanel = null; start(id, draft.personIds, draft); openJob(jobs.get(id));
     };
   }
   function renderStart(draft) {
-    const p = plan(draft.scenarioId, draft.policy, draft.personId, draft), host = q('#hsc-start-plan'); if (!host) return;
+    const p = plan(draft.scenarioId, draft.policy, draft.personIds, draft), host = q('#hsc-start-plan'); if (!host) return;
     const referenceOpen = Boolean(host.querySelector('.hsc-reference[open]'));
     const expanded = new Set([...host.querySelectorAll('details[open][data-insight-id]')].map(item => item.dataset.insightId));
-    host.innerHTML = headline(draft.scenarioId, p) + planMarkup(p) + (draft.commands.length ? `<div class="hsc-start-added"><strong>开始后执行</strong>${draft.commands.map(command => `<p>${e(command.label)}，以设备反馈为准</p>`).join('')}</div>` : '') + (draft.pendingPreference ? '<p class="hsc-memory-note">开始时将保存你确认的家庭场景偏好</p>' : '') + (draft.policy.durationMs ? `<p class="hsc-start-note">本次照料${draft.policy.durationMs / 60000}分钟</p>` : '') + (draft.pendingMemoryDisable ? '<p class="hsc-memory-note">开始时停用你指出的场景记忆</p>' : '') + insights.markup(prefKey(draft.scenarioId, draft.personId));
+    host.innerHTML = headline(draft.scenarioId, p) + planMarkup(p) + (draft.commands.length ? `<div class="hsc-start-added"><strong>开始后执行</strong>${draft.commands.map(command => `<p>${e(command.label)}，以设备反馈为准</p>`).join('')}</div>` : '') + (draft.pendingPreference ? '<p class="hsc-memory-note">开始时将保存你确认的家庭场景偏好</p>' : '') + (draft.policy.durationMs ? `<p class="hsc-start-note">本次照料${draft.policy.durationMs / 60000}分钟</p>` : '') + (draft.pendingMemoryDisable ? '<p class="hsc-memory-note">开始时停用你指出的场景记忆</p>' : '') + insights.markup(prefKey(draft.scenarioId, draft.personIds));
     host.querySelector('.hsc-reference').open = referenceOpen;
     host.querySelectorAll('[data-insight-id]').forEach(item => { item.open = expanded.has(item.dataset.insightId); });
-    q('#hsc-start').disabled = draft.busy || (draft.scenarioId === 'elder' && !people().some(person => person.id === draft.personId));
+    q('#hsc-start').disabled = draft.busy || (draft.scenarioId === 'elder' && !validSelection(draft.personIds));
     q('#hsc-start-supplement').disabled = draft.busy;
-    if (q('#hsc-person')) q('#hsc-person').disabled = draft.busy;
+    sheet.querySelectorAll('#hsc-person,[data-hsc-remove]').forEach(button => button.disabled = draft.busy);
     insights.observe();
   }
   const entranceFocus = id => container.querySelector(`[data-home-scenario="${id}"]`)?.focus({ preventScroll: true });
@@ -225,7 +280,7 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
     ];
   }
   function serviceData(job) {
-    const p = plan(job.scenarioId, job.policy, job.personId, job), d = def(job.scenarioId), ended = !active(job);
+    const p = plan(job.scenarioId, job.policy, job.personIds, job), d = def(job.scenarioId), ended = !active(job);
     return {
       id: job.id, experienceId: job.id, kind: 'scenario', scenarioId: job.scenarioId, scope: 'family', state: job.state, phase: ended ? 'ended' : job.busy ? 'preparing' : 'caring',
       title: ended ? `${d.title}已结束` : job.latestTitle?.startsWith(d.title) ? job.latestTitle : `${d.title} · ${job.latestTitle || '基础照料已接上'}`,
@@ -244,12 +299,12 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
     if (destroyed) return;
     renderEntrances();
     if (currentPanel?.type === 'manage' && currentPanel.job === job && sheet.open) renderManagement(job);
-    if (currentPanel?.type === 'start' && currentPanel.id === job.scenarioId && currentPanel.personId === job.personId && sheet.open) renderStart(currentPanel.job);
+    if (currentPanel?.type === 'start' && currentPanel.id === job.scenarioId && currentPanel.job === job && sheet.open) renderStart(currentPanel.job);
   }
   function start(id, personId, draft) {
     if (active(jobs.get(id))) { openJob(jobs.get(id)); return; }
     const policy = draft ? clone(draft.policy) : initialPolicy(id, personId), p = plan(id, policy, personId), at = now();
-    const job = { awayPresenceKey: presence().key, awayPresenceState: presence().state, id: `home-scenario-${id}-${at}-${++serial}`, scenarioId: id, personId, policy, state: 'active', createdAt: at, updatedAt: at, endAt: policy.durationMs ? at + policy.durationMs : null, steps: [], initialEvidence: initialEvidence(id, p, personId), busy: false, pendingIds: [], controlledIds: [], revision: 1, demoUsed: false, snapshotKey: '', latestTitle: `${def(id).title}已开始`, latestText: p.lead, reminderPrepared: false, reminderDue: policy.reminder && !policy.quiet ? at + policy.reminder.delayMs : null };
+    const job = { awayPresenceKey: presence().key, awayPresenceState: presence().state, id: `home-scenario-${id}-${at}-${++serial}`, scenarioId: id, personIds:selectedIds(personId), policy, state: 'active', createdAt: at, updatedAt: at, endAt: policy.durationMs ? at + policy.durationMs : null, steps: [], initialEvidence: initialEvidence(id, p, personId), busy: false, pendingIds: [], controlledIds: [], revision: 1, demoUsed: false, snapshotKey: '', latestTitle: `${def(id).title}已开始`, latestText: p.lead, reminderPrepared: false, reminderDue: policy.reminder && !policy.quiet ? at + policy.reminder.delayMs : null };
     jobs.set(id, job);
     if (id === 'away') job.initialEvidence.unshift({ title: '开始时的在场信息', value: presence().state === 'vacant' ? '现有信息已确认无人' : presence().state === 'occupied' ? '仍有在场反馈，先检查设备与环境，不按全屋无人执行动作' : '在场信息不足，先检查设备与环境，不视为确认无人', at });
     append(job, '结合当前家庭信息安排照料', p.lead);
@@ -262,8 +317,8 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
     schedule(() => advancePreviewSources(job), 12000);
   }
   function managementMarkup(job) {
-    const p = plan(job.scenarioId, job.policy, job.personId, job), validPerson = job.scenarioId !== 'elder' || people().some(person => person.id === job.personId);
-    return `${headline(job.scenarioId, p, true)}<div class="hsc-live-meta"><span><i></i>${active(job) ? job.busy ? '等待设备反馈' : def(job.scenarioId).active : '本次照料已结束'}</span><span>${e(timeText(job.createdAt))}开始${job.endAt ? ` · 至${e(timeText(job.endAt))}` : ''}</span></div>${!validPerson ? '<p class="hsc-scope-warning">原人物资料已不可用，请更换关怀对象。</p>' : ''}${job.scenarioId === 'elder' ? `<button class="hsc-change-person" id="hsc-change-person">关怀对象：${e(personName(job.personId))}<span>更换</span></button>` : ''}<section class="hsc-section"><h3>当前安排</h3>${planMarkup(p)}</section>${job.reminderPrepared && !job.reminderAckAt ? `<section class="hsc-pending hsc-reminder-ready"><strong>${e(job.policy.reminder.text)} · 提醒已备好</strong><p>已到你安排的时间，尚未向${e(job.scenarioId === 'elder' ? personName(job.personId) : '本人')}送达。</p><button class="hsc-confirm-doors" id="hsc-reminder-ack">我已知晓</button></section>` : ''}${job.latestAction ? `<section class="hsc-device-feedback" aria-live="polite"><strong>${e(job.latestAction.title)}</strong><p>${e(job.latestAction.text)}</p></section>` : ''}${insights.markup(prefKey(job.scenarioId, job.personId))}`;
+    const p = plan(job.scenarioId, job.policy, job.personIds, job), validPerson = job.scenarioId !== 'elder' || validSelection(job.personIds);
+    return `${headline(job.scenarioId, p, true)}<div class="hsc-live-meta"><span><i></i>${active(job) ? job.busy ? '等待设备反馈' : def(job.scenarioId).active : '本次照料已结束'}</span><span>${e(timeText(job.createdAt))}开始${job.endAt ? ` · 至${e(timeText(job.endAt))}` : ''}</span></div>${!validPerson ? '<p class="hsc-scope-warning">原人物资料已不可用，请更换关怀对象。</p>' : ''}${job.scenarioId === 'elder' ? `<button class="hsc-change-person" id="hsc-change-person"><span>关怀对象</span><span class="hsc-person-tags">${personTags(job.personIds)}</span><span>更换</span></button>` : ''}<section class="hsc-section"><h3>当前安排</h3>${planMarkup(p)}</section>${job.reminderPrepared && !job.reminderAckAt ? `<section class="hsc-pending hsc-reminder-ready"><strong>${e(job.policy.reminder.text)} · 提醒已备好</strong><p>已到你安排的时间，尚未向${e(job.scenarioId === 'elder' ? personName(job.personIds) : '本人')}送达。</p><button class="hsc-confirm-doors" id="hsc-reminder-ack">我已知晓</button></section>` : ''}${job.latestAction ? `<section class="hsc-device-feedback" aria-live="polite"><strong>${e(job.latestAction.title)}</strong><p>${e(job.latestAction.text)}</p></section>` : ''}${insights.markup(prefKey(job.scenarioId, job.personIds))}`;
   }
   function renderManagement(job) {
     const host = q('#hsc-management'); if (!host) return;
@@ -287,16 +342,14 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
     q('#hsc-end').onclick = () => confirmEnd(job);
   }
   function changePerson(job) {
-    openSheet('更换关怀对象', `${personPicker(job.personId)}<p class="sheet-description">本次关怀记录保留，新的安排以你确认的对象为准。</p><div class="dialog-actions"><button class="secondary-button" id="hsc-person-cancel">取消</button><button class="primary-button" id="hsc-person-save" disabled>确认更换</button></div>`, { onCancel: () => openJob(job) }); frame('home-scenario');
-    q('#hsc-person').onchange = event => { q('#hsc-person-save').disabled = !event.target.value || event.target.value === job.personId; };
-    q('#hsc-person-cancel').onclick = () => openJob(job);
-    q('#hsc-person-save').onclick = () => {
-      const id = q('#hsc-person').value; if (!active(job) || !people().some(person => person.id === id)) return;
+    const back = () => { openJob(job); q('#hsc-change-person')?.focus({preventScroll:true}); };
+    choosePeople(job.personIds, {title:'更换关怀对象', allowEmpty:false, cancel:back, accept:ids => {
+      if (!active(job) || !validSelection(ids) || prefKey('elder',ids) === prefKey('elder',job.personIds)) { back(); return; }
       if (job.reminderEventId && !job.reminderAckAt) emitReminder(job, 'cancelled');
       job.reminderEventId = null; job.reminderPrepared = false; job.reminderAckAt = null;
-      job.personId = id; lastPerson = id; job.memoryNotice = null; job.policy = initialPolicy('elder', id); job.endAt = null; job.reminderDue = null; job.revision++;
-      update(job, `已改为关怀${personName(id)}`, '按你确认的新对象从基础照料接续，原对象的本次要求不自动套用。'); openJob(job);
-    };
+      job.personIds = ids; lastPeople = [...ids]; job.memoryNotice = null; job.policy = initialPolicy('elder', ids); job.endAt = null; job.reminderDue = null; job.revision++;
+      update(job, `已改为关怀${personName(ids)}`, '按你确认的新对象从基础照料接续，原对象的本次要求不自动套用。'); openJob(job);
+    }});
   }
   function update(job, title, text) { job.latestTitle = title; job.latestText = text; append(job, title, text); publish(job); }
   function duration(text) {
@@ -312,12 +365,15 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
       return memory ? { patch: {}, commands: [], text, summary: '停用这条场景记忆，后续不再沿用', memoryAction: 'disable' } : { question: '这次还没有整理出新的场景记忆，你可以直接告诉我需要调整的安排。' };
     }
     if (/以后都这样|以后也这样|这条理解没问题|记住这条|确认这条理解/u.test(text) && sceneMemory(job)) {
-      const memory = sceneMemory(job), preference = preferences.get(prefKey(job.scenarioId, job.personId));
+      const memory = sceneMemory(job), preference = preferences.get(prefKey(job.scenarioId, job.personIds));
       return { patch: clone(preference.patch), commands: [], future: true, text, summary: `后续${def(job.scenarioId).title}参考：${memory.text}`, learnedText: memory.text };
     }
     if (job.scenarioId === 'elder') {
-      const named = people().find(person => text.includes(person.name));
-      if (named && named.id !== job.personId) return { question: job.personId ? `本次正在关怀${personName(job.personId)}。如果要改为${named.name}，请先返回更换关怀对象。` : `请先返回选择${named.name}为关怀对象，再补充所在位置。` };
+      const named = people().filter(person => text.includes(person.name));
+      const outside = named.find(person => !job.personIds.includes(person.id));
+      if (outside) return {question:`请先在关怀对象中选中${outside.name}，再补充这项安排。`};
+      if (named.length && named.length < job.personIds.length) return {question:`这项补充会用于${personName(job.personIds)}。若只照应${named.map(person => person.name).join('、')}，请先更换本次对象。`};
+
     }
     const minutes = duration(text);
     if (minutes && (minutes < 60000 || minutes > 86400000)) return { question: '这次需要照料多久？可安排1分钟至24小时，也可以不限定时间。' };
@@ -375,7 +431,7 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
     if (future && commands.length) return { question: '这次可以操作设备；长期自动执行还需明确适用条件。请先告诉我这次需要的具体调整。' };
     return { patch, commands, future, text, summary: changes.join('；'), learnedText: `${def(job.scenarioId).title}时，${changes.filter(item => !item.startsWith('向')).join('；').replaceAll('本次', '每次')}` };
   }
-  const examples = job => job.scenarioId === 'away' ? ['这次关闭客厅空调', '以后外出优先检查客厅空调', '这次关闭客厅主灯'] : job.scenarioId === 'sleep' ? ['这次保留床头阅读灯', '午休半小时，不要提醒', '以后休息时都不要提醒'] : [`${job.personId ? personName(job.personId) : '家人'}在主卧，午休时不要提醒`, '半小时后提醒喝水', '以后关怀时都不要提醒'];
+  const examples = job => job.scenarioId === 'away' ? ['这次关闭客厅空调', '以后外出优先检查客厅空调', '这次关闭客厅主灯'] : job.scenarioId === 'sleep' ? ['这次保留床头阅读灯', '午休半小时，不要提醒', '以后休息时都不要提醒'] : [`${job.personIds.length ? personName(job.personIds) : '家人'}在主卧，午休时不要提醒`, '半小时后提醒喝水', '以后关怀时都不要提醒'];
   const sendIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="url(#hsc-send-gradient)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><defs><linearGradient id="hsc-send-gradient" x1="4" y1="4" x2="20" y2="20"><stop stop-color="#007aff"/><stop offset="1" stop-color="#f96222"/></linearGradient></defs><path d="M12 19V5m-5 5 5-5 5 5"/></svg>';
   function openSupplement(job, back = () => openJob(job)) {
     currentPanel = { type: 'supplement', job }; proposal = null;
@@ -402,14 +458,14 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
   }
   async function remember(job, intent) {
     const before = sceneMemory(job);
-    const old = pref(job.scenarioId, job.personId) || preferences.get(prefKey(job.scenarioId, job.personId)), savedPolicy = clone(intent.patch);
+    const old = pref(job.scenarioId, job.personIds) || preferences.get(prefKey(job.scenarioId, job.personIds)), savedPolicy = clone(intent.patch);
     let result;
-    try { result = await onRemember?.({ memoryId: old?.memoryId, text: [...intent.learnedText].slice(0, 80).join(''), subject: job.scenarioId === 'elder' ? personName(job.personId) : '家庭共同安排', roomId: intent.patch.focusIds?.length === 1 ? intent.patch.focusIds[0] : null, context: def(job.scenarioId).title, origin: 'scenario', enabled: true, confirmUnderstanding: true, evidenceText: intent.text }); }
+    try { result = await onRemember?.({ memoryId: old?.memoryId, text: [...intent.learnedText].slice(0, 80).join(''), subject: job.scenarioId === 'elder' ? personName(job.personIds) : '家庭共同安排', roomId: intent.patch.focusIds?.length === 1 ? intent.patch.focusIds[0] : null, context: def(job.scenarioId).title, origin: 'scenario', enabled: true, confirmUnderstanding: true, evidenceText: intent.text }); }
     catch { result = { ok: false, error: '暂时没能保存偏好' }; }
     if (!result?.ok) return { ok: false, error: result?.error || '暂时无法保存偏好，请稍后重试或取消长期选项' };
-    preferences.set(prefKey(job.scenarioId, job.personId), { memoryId: result.id || result.item?.id, patch: savedPolicy, text: intent.learnedText, storedText: result.item?.text || [...intent.learnedText].slice(0, 80).join('') });
+    preferences.set(prefKey(job.scenarioId, job.personIds), { memoryId: result.id || result.item?.id, patch: savedPolicy, text: intent.learnedText, storedText: result.item?.text || [...intent.learnedText].slice(0, 80).join('') });
     const memory = result.item;
-    if (!before || insightFingerprint(before) !== insightFingerprint(memory)) insights.note({ key: prefKey(job.scenarioId, job.personId), memory, effect: futureEffect(job.scenarioId, savedPolicy), source: intent.text, kind: /先.+再/u.test(intent.text) ? '照料方式' : /习惯|平时|通常/u.test(intent.text) ? '生活习惯' : '照料偏好', semanticKey: policyKey(savedPolicy), refreshOnly: Boolean(before && policyKey(old?.patch) === policyKey(savedPolicy)) });
+    if (!before || insightFingerprint(before) !== insightFingerprint(memory)) insights.note({ key: prefKey(job.scenarioId, job.personIds), memory, effect: futureEffect(job.scenarioId, savedPolicy), source: intent.text, kind: /先.+再/u.test(intent.text) ? '照料方式' : /习惯|平时|通常/u.test(intent.text) ? '生活习惯' : '照料偏好', semanticKey: policyKey(savedPolicy), refreshOnly: Boolean(before && policyKey(old?.patch) === policyKey(savedPolicy)) });
     job.memoryNotice = { id: result.id || memory?.id, text: memory?.text || intent.learnedText };
     return { ok: true };
   }
@@ -463,7 +519,7 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
     if (!job.reminderEventId && stage !== 'ready') return;
     if (!job.reminderEventId) { job.reminderEventId = `${job.id}-reminder-${++serial}`; job.reminderEventText = job.policy.reminder.text; job.reminderEventAt = now(); }
     const ready = stage === 'ready', text = job.reminderEventText;
-    onService?.({ id: job.reminderEventId, experienceId: job.reminderEventId, kind: 'event', careEvent: true, scope: 'family', title: ready ? `${text}提醒已备好` : stage === 'acknowledged' ? `你已知晓${text}提醒` : `${text}提醒已结束`, summary: ready ? `已到约定时间，站内内容已准备，尚未向${job.scenarioId === 'elder' ? personName(job.personId) : '本人'}送达` : stage === 'acknowledged' ? '已记录你的知晓，未据此判断本人已收到或已完成' : '本次安排已结束，准备过的内容保留，未向本人送达', status: ready ? '待处理' : stage === 'acknowledged' ? '已知晓' : '已结束', state: ready ? 'active' : 'past', evidence: [{ title: '你安排的提醒', value: text, at: job.reminderEventAt }], reason: `你在${def(job.scenarioId).title}中明确安排了这次提醒。`, steps: [{ title: '站内提醒已准备', detail: text, at: job.reminderEventAt }, ...(ready ? [] : [{ title: stage === 'acknowledged' ? '你已知晓' : '安排已结束', detail: '未将站内准备表达为本人已收到', at: now() }])], createdAt: job.reminderEventAt, updatedAt: now(), at: now(), manage: ready && active(job) ? (options = {}) => { returnHandler = options.onReturn || null; openJob(job); } : null });
+    onService?.({ id: job.reminderEventId, experienceId: job.reminderEventId, kind: 'event', careEvent: true, scope: 'family', title: ready ? `${text}提醒已备好` : stage === 'acknowledged' ? `你已知晓${text}提醒` : `${text}提醒已结束`, summary: ready ? `已到约定时间，站内内容已准备，尚未向${job.scenarioId === 'elder' ? personName(job.personIds) : '本人'}送达` : stage === 'acknowledged' ? '已记录你的知晓，未据此判断本人已收到或已完成' : '本次安排已结束，准备过的内容保留，未向本人送达', status: ready ? '待处理' : stage === 'acknowledged' ? '已知晓' : '已结束', state: ready ? 'active' : 'past', evidence: [{ title: '你安排的提醒', value: text, at: job.reminderEventAt }], reason: `你在${def(job.scenarioId).title}中明确安排了这次提醒。`, steps: [{ title: '站内提醒已准备', detail: text, at: job.reminderEventAt }, ...(ready ? [] : [{ title: stage === 'acknowledged' ? '你已知晓' : '安排已结束', detail: '未将站内准备表达为本人已收到', at: now() }])], createdAt: job.reminderEventAt, updatedAt: now(), at: now(), manage: ready && active(job) ? (options = {}) => { returnHandler = options.onReturn || null; openJob(job); } : null });
   }
   async function runCommands(job, commands, summary) {
     if (!active(job)) return;
@@ -488,7 +544,7 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
   }
   function sourceKey(job) {
     const p = snapshot(job.scenarioId, job.policy);
-    return JSON.stringify([p.rows.map(row => [row.roomId, row.value, row.source]), p.unavailable.map(device => device.id), p.inUse.map(room => [room.id, room.activity]), job.scenarioId === 'elder' ? people().some(person => person.id === job.personId) : true]);
+    return JSON.stringify([p.rows.map(row => [row.roomId, row.value, row.source]), p.unavailable.map(device => device.id), p.inUse.map(room => [room.id, room.activity]), job.scenarioId === 'elder' ? validSelection(job.personIds) : true]);
   }
   function refreshAwayPresence(job) {
     if (job.scenarioId !== 'away' || !active(job)) return;
@@ -505,7 +561,7 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
       refreshAwayPresence(job);
       const key = sourceKey(job);
       if (job.snapshotKey && key !== job.snapshotKey) {
-        const before = JSON.parse(job.snapshotKey), p = plan(job.scenarioId, job.policy, job.personId, job);
+        const before = JSON.parse(job.snapshotKey), p = plan(job.scenarioId, job.policy, job.personIds, job);
         const recovered = before[1].filter(id => !p.unavailable.some(device => device.id === id)).map(id => store.get(id)).filter(Boolean).map(deviceLabel);
         const changed = p.rows.filter(row => !before[0].some(old => old[0] === row.roomId && old[1] === row.value && old[2] === row.source));
         job.snapshotKey = key; job.revision++;
@@ -534,7 +590,7 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
   }
   function finish(job, reason) {
     if (!active(job)) return;
-    const p = plan(job.scenarioId, job.policy, job.personId, job);
+    const p = plan(job.scenarioId, job.policy, job.personIds, job);
     const actions = (job.actionResults || []).map(result => result.message);
     const outcomes = [actions.length ? actions.join('；') : `已核对${p.readable.length}台设备的可读信息`, job.reminderPrepared ? job.reminderAckAt ? '已知晓安排的提醒' : '安排的站内提醒已备好' : '', p.unavailable.length ? `${p.unavailable.length}项连接仍待核对` : ''].filter(Boolean);
     job.state = 'past'; job.endedAt = now(); job.endReason = reason; job.pendingIds = [];
@@ -578,10 +634,16 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
     returnHandler = null;
     if (all.length === 1) { openJob(all[0]); return; }
     currentPanel = null;
-    openSheet('正在进行的照料', `<p class="sheet-description">小元分别接续每一件事，你可以随时补充或结束。</p><div class="hsc-active-list">${all.map(job => { const d = def(job.scenarioId); return `<button data-hsc-active="${d.id}" class="hsc-tone-${d.tone}"><span class="hsc-list-icon">${svgFor(d)}</span><span><strong>${d.title}</strong><small>${job.scenarioId === 'elder' ? e(personName(job.personId)) : '家庭基础照料'}</small><small>${e(job.latestTitle)}</small></span><span class="hsc-list-arrow">›</span></button>`; }).join('')}</div>`, { onCancel: closeFlow }); frame('home-scenario');
+    openSheet('正在进行的照料', `<p class="sheet-description">小元分别接续每一件事，你可以随时补充或结束。</p><div class="hsc-active-list">${all.map(job => { const d = def(job.scenarioId); return `<button data-hsc-active="${d.id}" class="hsc-tone-${d.tone}"><span class="hsc-list-icon">${svgFor(d)}</span><span><strong>${d.title}</strong><small>${job.scenarioId === 'elder' ? e(personName(job.personIds)) : '家庭基础照料'}</small><small>${e(job.latestTitle)}</small></span><span class="hsc-list-arrow">›</span></button>`; }).join('')}</div>`, { onCancel: closeFlow }); frame('home-scenario');
     sheet.querySelectorAll('[data-hsc-active]').forEach(button => button.onclick = () => openJob(jobs.get(button.dataset.hscActive)));
   }
-  function open(id) { if (!def(id) || destroyed) return; returnHandler = null; active(jobs.get(id)) ? openJob(jobs.get(id)) : openStart(id); }
+  function openGuest(id) {
+    const d=def(id),p=plan(id,basePolicy(),[]);
+    if(id==='elder')p.lead='关注家人的日常环境与生活安排，留意需要照应的变化。';
+    openSheet(d.title,`${headline(id,p)}<section class="hsc-section"><h3>基础照料安排</h3>${planMarkup(p)}</section><p class="hsc-guest-note">访客可以查看照料安排。开始、结束或修改场景，需要家庭成员操作。</p>`,{onCancel:closeFlow,restoreFocus:()=>entranceFocus(id)});
+    frame('home-scenario');
+  }
+  function open(id) { if (!def(id) || destroyed) return; if(readOnly){openGuest(id);return;} returnHandler = null; active(jobs.get(id)) ? openJob(jobs.get(id)) : openStart(id); }
   function click(event) { const button = event.target.closest('[data-home-scenario]'); if (button) open(button.dataset.homeScenario); else if (event.target.closest('.hc-current-mode')) openActiveList(); }
   const unsubscribe = store.subscribe(refresh);
   const tick = setInterval(() => {
@@ -589,12 +651,12 @@ export function createHomeScenarios({ seedInsights = true, container, store, get
       if (!active(job)) continue;
       refreshAwayPresence(job);
       if (job.endAt && now() >= job.endAt) { finish(job, 'expiry'); continue; }
-      if (job.scenarioId === 'elder' && !people().some(person => person.id === job.personId)) continue;
+      if (job.scenarioId === 'elder' && !validSelection(job.personIds)) continue;
       if (job.reminderDue && now() >= job.reminderDue && !job.reminderPrepared && !job.policy.quiet) {
         job.reminderPrepared = true; update(job, '你安排的提醒已在这里备好', `${job.policy.reminder.text}。提醒内容已准备好，尚未向本人送达。`); emitReminder(job, 'ready');
       }
     }
   }, 1000);
-  container.addEventListener('click', click); renderEntrances(); if(seedInsights)seedInsightExamples();
+  container.addEventListener('click', click); renderEntrances(); if(seedInsights&&!readOnly)seedInsightExamples();
   return { refresh, open, get(id) { const job = jobs.get(id) || [...jobs.values()].find(item => item.id === id); return job && serviceData(job); }, getActive() { return [...jobs.values()].filter(active).map(serviceData); }, destroy() { destroyed = true; insights.destroy(); unsubscribe(); clearInterval(tick); timers.forEach(clearTimeout); container.removeEventListener('click', click); } };
 }

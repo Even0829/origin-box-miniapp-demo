@@ -63,7 +63,9 @@ export function createMemoryPage({ page, detailPage, store, getRooms, setView, o
 
   function filteredItems() {
     const needle = normalize(search);
-    return store.getMemories().filter((item) => {
+    // Lead the initial demo with the family agreements. New or corrected user memories still surface first.
+    const rank = item => item.revision && !(item.revision === 1 && item.sourceLabel === '从照料中整理') ? 0 : item.careTopic ? 1 : 2;
+    return store.getMemories().sort((a, b) => rank(a) - rank(b)).filter((item) => {
       if (type !== 'all' && item.type !== type) return false;
       if (filter.scope !== 'all' && item.visibility !== filter.scope) return false;
       if (filter.state === 'current' && (!item.enabled || item.expired)) return false;
@@ -74,7 +76,7 @@ export function createMemoryPage({ page, detailPage, store, getRooms, setView, o
   }
 
   function cardMarkup(item) {
-    const scope = [item.visibility === 'family' ? '家庭共享' : '仅自己', item.roomName, item.context].filter(Boolean).join(' · ');
+    const scope = [item.visibility === 'family' ? '家庭共享' : '仅自己', item.careTopic ? item.subject : '', item.roomName, item.context].filter(Boolean).join(' · ');
     return `<button class="mm-card" data-memory-id="${e(item.id)}" aria-label="查看记忆：${e(item.text)}"><p class="mm-conclusion">${e(item.text)}</p><p class="mm-scope">${e(scope)}</p><div class="mm-card-bottom"><span class="mm-source">${item.type === 'short' ? '短期' : '长期'} · ${e(item.sourceLabel || '你告诉我的')}</span><span class="mm-card-status">${statusBadges(item)}</span></div>${item.type === 'short' ? `<p class="mm-card-period">${e(item.periodText)}</p>` : ''}</button>`;
   }
 

@@ -133,9 +133,9 @@
 .dd-page[data-device-type="climate"] .dd-product-image > img { flex-shrink: 0; width: 184px; height: 184px; }
 
 .dd-identity-copy { width: 100%; min-width: 0; }
-.dd-meta { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 3px 8px; color: var(--dd-muted); font-size: 12px; line-height: 20px; }
+.dd-meta { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 3px 2px; color: var(--dd-muted); font-size: 12px; line-height: 20px; }
 .dd-meta > span { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; overflow-wrap: anywhere; }
-.dd-meta > span + span::before { color: #8ca0b3; content: "·"; }
+.dd-meta-separator { color: #8ca0b3; }
 .dd-health { display: inline-flex; align-items: center; flex-shrink: 0; gap: 5px; color: #356d53; white-space: nowrap; }
 .dd-health > i { display: none; }
 .dd-health::before { width: 5px; height: 5px; border-radius: 50%; background: #29a271; content: ""; }
@@ -280,6 +280,35 @@
 .dd-metric > strong > small,
 .dd-metric > strong > span { margin-left: 3px; font-size: 14px; line-height: 22px; letter-spacing: 0; font-weight: 400; }
 .dd-metric > small { margin-top: 4px; color: var(--dd-muted); font-size: 11px; line-height: 18px; }
+.dd-presence-metrics { margin-top: 10px; }
+.dd-health-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.dd-health-heading h2 { font-size: 15px; font-weight: 550; line-height: 23px; }
+.dd-health-heading > span { color: var(--dd-muted); font-size: 11px; text-align: right; }
+.dd-health-section .dd-metric[data-key="bloodPressure"] > strong { font-size: 22px; line-height: 40px; }
+.dd-health-list { padding: 0 14px; border-radius: 14px; background: #fff; }
+.dd-health-list-row { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; font-size: 12px; line-height: 19px; font-variant-numeric: tabular-nums; }
+.dd-health-list-row + .dd-health-list-row { border-top: 1px solid #edf1f5; }
+.dd-health-list-row > span { flex-shrink: 0; color: var(--dd-muted); }
+.dd-health-list-row > strong { min-width: 0; font-weight: 550; text-align: right; overflow-wrap: anywhere; }
+.dd-sleep-report { display: grid; padding: 15px 17px; margin-bottom: 10px; border-radius: 14px; background: #fff; }
+.dd-sleep-report > span { color: var(--dd-muted); font-size: 12px; }
+.dd-sleep-report > strong { margin: 3px 0 12px; font-size: 24px; font-weight: 520; }
+.dd-sleep-strip { display: flex; height: 20px; gap: 2px; overflow: hidden; border-radius: 6px; }
+.dd-sleep-strip > span { flex-basis: 0; }
+.dd-sleep-strip .is-asleep, .dd-sleep-legend span:first-child::before { background: #647eae; }
+.dd-sleep-strip .is-awake, .dd-sleep-legend span:last-child::before { background: #dce5f3; }
+.dd-sleep-times { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; color: var(--dd-muted); font-size: 11px; }
+.dd-sleep-legend { display: flex; gap: 15px; margin-top: 10px; color: var(--dd-muted); font-size: 11px; }
+.dd-sleep-legend span::before { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; content: ""; }
+.dd-page[data-device-type="health"] .dd-trend-tabs { float: none; flex-wrap: wrap; margin: 4px 0 9px; }
+.dd-page[data-device-type="health"] .dd-trend-tab { flex: 1 1 auto; }
+.dd-reminder-form { padding: 0 0 12px; }
+.dd-reminder-switch, .dd-reminder-times > label { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+.dd-reminder-switch { padding: 0 2px 4px 0; }
+.dd-reminder-switch input { width: 22px; height: 22px; accent-color: #486c90; }
+.dd-reminder-times > label { padding: 5px 0; border-top: 1px solid #edf1f5; }
+.dd-reminder-times input { width: 126px; min-height: 42px; font-variant-numeric: tabular-nums; }
+.dd-reminder-form .dialog-actions { margin-top: 15px; }
 .dd-presence { display: grid; grid-template-columns: 42px minmax(0, 1fr); grid-template-rows: auto auto; align-items: center; gap: 3px 13px; padding: 19px 18px; border-radius: 14px; text-align: left; background: #fff; }
 .dd-presence-symbol { display: flex; grid-row: 1 / 3; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 50%; background: #e8f0f7; color: #416583; }
 .dd-presence-symbol > .dd-glyph { width: 23px; height: 23px; }

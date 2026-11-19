@@ -21,7 +21,7 @@ export function recognitionHint(member){
 export function memberRow(m,selfId){
  const permission=m.permission==='admin'?'管理员':'普通成员';
  const info=`角色：${m.role||'暂无'}${!m.accountId?' · 暂未认领':''}`,hint=recognitionHint(m);
- return `<button class="mp-row ac-member" data-ac-member="${esc(m.id)}" aria-label="${esc([m.name,permission,info,hint].filter(Boolean).join('，'))}"><span class="ac-member-avatar"><img src="assets/person-default.png" alt=""></span><span class="mp-row-copy"><strong><span class="ac-member-name">${esc(m.name)}</span><em class="ac-permission-${m.permission}">${permission}</em></strong><small title="${esc(info)}">${esc(info)}</small></span>${hint?`<span class="ac-recognition-hint">${hint}</span>`:''}${arrow}</button>`;
+ return `<button class="mp-row ac-member" data-ac-member="${esc(m.id)}" aria-label="${esc([m.name,permission,info,hint].filter(Boolean).join('，'))}"><span class="ac-member-avatar"><img src="${esc(m.avatar || 'assets/person-default.png')}" alt=""></span><span class="mp-row-copy"><strong><span class="ac-member-name">${esc(m.name)}</span><em class="ac-permission-${m.permission}">${permission}</em></strong><small title="${esc(info)}">${esc(info)}</small></span>${hint?`<span class="ac-recognition-hint">${hint}</span>`:''}${arrow}</button>`;
 }
 export const facts=rows=>`<dl class="ac-facts">${rows.map(([a,b])=>`<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join('')}</dl>`;
 

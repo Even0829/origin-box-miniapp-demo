@@ -136,5 +136,15 @@
 @media(prefers-reduced-motion:reduce){.device-room-popup{animation:none}.device-room-arrow{transition:none}}
 
 /* Wide product artwork keeps a comparable visible size inside the standard card. */
-.device-card[data-device-type=climate] .device-card-picture{width:86px}
-.device-card[data-device-type=climate] .device-card-picture>img{width:104px;height:104px;max-width:none;flex-shrink:0}
+.device-card[data-device-type=climate] .device-card-picture{width:64px}
+.device-card[data-device-type=climate] .device-card-picture>img{width:72px;height:72px;max-width:none;flex-shrink:0}
+
+/* Fit the product inside the card using its visible silhouette, including wide and tall artwork. */
+.device-card[data-device-type=health] .device-card-picture,
+.device-card[data-device-type=heater] .device-card-picture{top:10px;width:84px;height:62px}
+.device-card-picture>img:is([src$="device-blood-pressure.png"],[src$="device-health-band.png"]){--device-product-size:82px}
+.device-card-picture>img:is([src$="device-blood-glucose.png"],[src$="device-body-scale.png"],[src$="device-sleep-belt.png"]){--device-product-size:90px}
+.device-card-picture>img[src$="device-pillbox.png"]{--device-product-size:94px}
+.device-card-picture>img[src$="device-heater.png"]{--device-product-size:64px}
+.device-card[data-device-type=health] .device-card-picture>img,
+.device-card[data-device-type=heater] .device-card-picture>img{width:var(--device-product-size,62px);height:var(--device-product-size,62px);max-width:none;flex-shrink:0}

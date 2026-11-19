@@ -22,7 +22,7 @@ const glyphs={
 const chatIcon=name=>'<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(glyphs[name]??glyphs.file)+'</svg>';
 const actionIcon=name=>name==='voice'?'<span class="asset chat-action-wave"><img src="assets/voice.svg" alt=""></span>':'<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="url(#chat-action-gradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="chat-action-gradient" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse"><stop stop-color="#007aff"/><stop offset="1" stop-color="#f96222"/></linearGradient></defs>'+glyphs[name].replace('fill="currentColor"','fill="url(#chat-action-gradient)"')+'</svg>';
 
-export function createConversation({seedConversations=true,icon,setView,onHome,openSheet,toast,getRooms,getLampLevel,getLampDevice,onRecord,onDevice,startAir,cancelAir,memoryDialogue}){
+export function createConversation({requestNotice=null,seedConversations=true,icon,setView,onHome,openSheet,toast,getRooms,getLampLevel,getLampDevice,onRecord,onDevice,startAir,cancelAir,memoryDialogue}){
   const $=s=>document.querySelector(s);
   const page=document.createElement('section');
   page.id='chat-page';page.className='chat-page';page.hidden=true;page.setAttribute('aria-labelledby','chat-title');
@@ -356,6 +356,7 @@ export function createConversation({seedConversations=true,icon,setView,onHome,o
     const m={id:uid(),role:'assistant',text:'',time:clock(),processing:files.length?'正在读取资料':'正在理解你的请求',blocks:[]};
     const run={message:m,timers:new Map(),stopped:false};s.busy=run;append(s,m);
     if(!await wait(run,650))return;
+    const accessNotice=requestNotice?.(text);if(accessNotice){await stream(s,run,accessNotice);finish(s,run);return;}
     if(/^再试(一次)?[。！]?$/u.test(text)){const prior=s.messages.filter(n=>n.role==='user').at(-2);if(prior&&/灯/.test(prior.text))text=prior.text;}
     const hasLamp=/灯|亮度|暗一点|亮一点/.test(text),lastArtifact=findArtifact(s);
     const work=/汇报|材料|资料|文稿|要点|摘要|总结|工作|方案/.test(text);

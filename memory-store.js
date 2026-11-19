@@ -22,7 +22,7 @@ function formatDate(value) {
   return `${year}.${month}.${day}`;
 }
 
-export function createMemoryStore({ seedMode = 'normal', getMemberId = null, initialRecords = null, personalSeeds = [], getRooms = () => [], now = () => Date.now(), onRecord = () => {} } = {}) {
+export function createMemoryStore({ careMemorySeeds = [], seedMode = 'normal', getMemberId = null, initialRecords = null, personalSeeds = [], getRooms = () => [], now = () => Date.now(), onRecord = () => {} } = {}) {
   const stamp = () => Number(now());
   const today = () => dateAt(stamp());
   const listeners = new Set();
@@ -197,6 +197,55 @@ export function createMemoryStore({ seedMode = 'normal', getMemberId = null, ini
     if(getMemberId)memories.forEach(item=>{if(item.visibility==='personal')item.ownerId=getMemberId();});
     for(const item of personalSeeds)memories.push({type:'long',visibility:'personal',enabled:true,understanding:'clear',roomId:null,subject:'你',context:'日常交流',expiresAt:null,periodNote:'持续适用，可随时调整',sourceLabel:'从盒子交流中记住',sourceDetail:'来自本地预置的成员交流样例',evidence:[{title:'此前与小元的交流',text:item.text,at:stamp()-86400000}],help:'在与本人交流时参考，个人内容仅本人可见',previous:[],createdAt:stamp()-86400000,updatedAt:stamp()-3600000,...item});
   }
+  function reconcileCareExamples() {
+    const withdrawn = {
+      'elder-visit-list': ['你要求记住'],
+      'elder-listening-agreement': ['家人已确认', '家人要求记住'],
+      'elder-pressure-storage': ['家人要求记住'],
+    };
+    for (let i = memories.length - 1; i >= 0; i--) {
+      const record = memories[i];
+      if (Object.hasOwn(withdrawn, record.id) && withdrawn[record.id].includes(record.sourceLabel) &&
+          !record.revision && !record.previous?.length) memories.splice(i, 1);
+    }
+    // Keep retired examples available to their existing dialogues, outside active family arrangements.
+    const retiredIds = ['elder-help-agreement', 'elder-floor-agreement', 'elder-pill-agreement'];
+    for (const record of memories) {
+      const retired = retiredIds.includes(record.id) && record.sourceLabel === '家人已确认';
+      const oldNightLight = record.id === 'elder-night-light' && record.sourceLabel === '家人要求记住';
+      if ((retired || oldNightLight) && !record.previous?.length) {
+        record.enabled = false;
+        delete record.careTopic;
+      }
+    }
+    if (seedMode === 'empty') return;
+    for (const seed of careMemorySeeds) {
+      const existing = memories.find(record => record.id === seed.id);
+      if (existing?.text === seed.text && !existing.previous?.length && existing.visibility === 'family') {
+        existing.careTopic = seed.careTopic;
+      }
+      const {basis, formation, ...item} = seed;
+      const confirmedAt = existing?.createdAt || stamp() - 3 * 86400000;
+      const inferred = formation === 'confirmed-summary';
+      const personal = item.visibility === 'personal';
+      const sourceLabel = inferred ? '小元归纳，家人已核对' : personal ? '你要求记住' : '家人要求记住';
+      // Refresh untouched demo copy on restore. Member edits, ownership and usage choices take precedence.
+      if (existing && (existing.revision || existing.previous?.length ||
+          !['家人已确认', sourceLabel].includes(existing.sourceLabel) ||
+          (existing.text === seed.text && existing.context === seed.context && existing.sourceLabel === sourceLabel))) continue;
+      const evidence = basis.map((text, index) => ({
+        title: inferred ? (index === 0 ? '先前的照料记录' : '家人核对') : personal ? '你的明确委托' : '家庭共同约定',
+        text, at: confirmedAt - (basis.length - 1 - index) * 86400000,
+        ...(personal ? {privateOwnerId:item.ownerId} : {}),
+      }));
+      const content = {...item, roomId:item.roomId || null, visibility:item.visibility || 'family', sourceLabel, evidence,
+        sourceDetail: inferred ? '小元先整理出可能的习惯，家人核对适用条件后才长期沿用。' : personal ? '来自本人明确交代的个人偏好。' : '来自家人一起确认并要求长期沿用的安排。'};
+      if (existing) Object.assign(existing, content);
+      else memories.push({...content, type:'long', understanding:'clear', enabled:true, expiresAt:null, previous:[],
+        periodNote:'持续适用，可随时调整', createdAt:confirmedAt, updatedAt:confirmedAt});
+    }
+  }
+  reconcileCareExamples();
   return {
     reclassify(id, visibility) {
       const item=find(id);
@@ -242,7 +291,7 @@ export function createMemoryStore({ seedMode = 'normal', getMemberId = null, ini
       return changed('restored', item, '撤销记忆更新', `已撤销本次更新：${item.text}`);
     },
     dumpForReview: () => clone(memories),
-    syncForReview(records){if(!Array.isArray(records))return;memories.splice(0,memories.length,...clone(records));listeners.forEach(fn=>fn({kind:'review-sync'}));},
+    syncForReview(records){if(!Array.isArray(records))return;memories.splice(0,memories.length,...clone(records));reconcileCareExamples();listeners.forEach(fn=>fn({kind:'review-sync'}));},
     getMemories: () => memories.filter(visible).map(snapshot).sort((a, b) => b.updatedAt - a.updatedAt),
     get: (id) => snapshot(find(id)),
     create,

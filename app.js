@@ -1,3 +1,5 @@
+import {guestSpaceState,guestCareData,guestConversationNotice,createGuestPages} from './guest-preview.js?v=guest-ux-4';
+import {elderCareServices, elderMemories} from './elder-care-demo.js';
 import {installAccountReviewBridge} from './account-review.js?v=simple-invites-20261113';
 import {createAccountStore,seedAccountCase,loadAccountSession,saveAccountSession,ACCOUNT_BUILD} from './account-store.js?v=simple-invites-20261113';
 import {createAccountCenter} from './account-center.js?v=simple-invites-20261113';
@@ -9,19 +11,20 @@ import {previewNow} from './preview-clock.js';
 import {createMinePage} from './mine.js?v=memory-dialogue-20261113';
 import {createPeoplePage} from './people.js?v=simple-invites-20261113';
 import {createMemoryPage} from './memory.js?v=memory-detail-clean-20261113';
-import {createDeviceDetail} from './device-detail.js?v=source-data-20261019';
-import {createHomeContext} from './home-context.js?v=memory-dialogue-20261113';
-import {createHomeServices} from './home-services.js?v=active-care-20261116';
+import {createDeviceDetail} from './device-detail.js?v=device-detail-meta-20261118';
+import {createHomeContext} from './home-context.js?v=guest-ux-2';
+import {createHomeServices} from './home-services.js?v=guest-ux-2';
 import {createConsciousness,getIdleExpression} from './consciousness.js?v=active-care-20261116';
-import {createConversation} from './conversation.js?v=memory-auto-scope-20261113';
-import {createDeviceStore} from './device-store.js?v=simple-invites-20261113';
-import {createDevicesPage} from './devices.js?v=empty-copy-20261110';
-import {createDeviceSettings} from './device-settings.js?v=native-20261021';
-import {createDeviceConnections} from './device-connections.js?v=memory-dialogue-20261113';
+import {createConversation} from './conversation.js?v=guest-preview-20261119';
+import {createDeviceStore} from './device-store.js?v=device-list-finish-20261118';
+import {createDevicesPage} from './devices.js?v=device-list-finish-20261118';
+import {createDeviceSettings} from './device-settings.js?v=care-device-sources-20261118';
+import {createDeviceConnections} from './device-connections.js?v=care-device-sources-20261118';
 import {createDeviceOnboarding} from './device-onboarding.js?v=native-protocol-copy-20261021';
-import {createFirstUseLauncher} from './first-use-launcher.js?v=box-wifi-20261117';
+import {createFirstUseLauncher} from './first-use-launcher.js?v=guest-preview-20261119';
 import {mountFirstUseResult} from './first-use-result.js?v=empty-copy-20261110';
 const firstUseMode=new URLSearchParams(location.search).get('first-use-result')||'';
+const guestPreview=firstUseMode==='guest';
 const accountParams=new URLSearchParams(location.search),requestedAccountToken=accountParams.get('account-session');
 const accountToken=requestedAccountToken||'normal-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
 const isolatedAccountPreview=Boolean(requestedAccountToken||firstUseMode);
@@ -34,6 +37,7 @@ if(accountStore.current()?.permission==='admin'&&accountStore.snapshot().setupCo
 accountStore.sessionToken=accountToken;
 let accountBusiness=null;try{accountBusiness=requestedAccountToken?JSON.parse(sessionStorage.getItem('origin-account-business:'+accountToken)):null;}catch{}
 const freshFamily=accountStore.snapshot().familyFresh;
+if(guestPreview)document.querySelector('#app').dataset.guestPreview='true';
 let memberPreview=accountStore.current()?.permission!=='admin';
 const hasSpatialModel=!freshFamily&&firstUseMode!=='no-model';
 let firstUseLauncher=null;
@@ -160,7 +164,8 @@ sheet.addEventListener('cancel',e=>{e.preventDefault();cancelSheet();});
 sheet.addEventListener('click',e=>{if(e.target===sheet){const r=sheet.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)cancelSheet();}});
 window.addEventListener('resize',()=>{if(sheet.open)updateDialogFrame();});
 function setView(view){
-  if(accountStore&&!accountStore.current()&&!['profile','profile-detail'].includes(view)){return false;}
+  if(guestPreview&&['spaces','device-settings','device-onboarding','memory-detail','people','profile-detail'].includes(view)){toast('这项需要家庭成员使用');return false;}
+  if(!guestPreview&&accountStore&&!accountStore.current()&&!['profile','profile-detail'].includes(view)){return false;}
   if(memberPreview&&['spaces','device-settings','device-onboarding',...(!accountStore?['people']:[])].includes(view)){toast('此项由管理员维护');return false;}
   if(sheet.open)sheet.close();hideReceipt();
   homeContext?.onViewChange(view);
@@ -240,13 +245,14 @@ function confirmDelete(r,{returnTo=null}={}){
 function openModel(){
   openSheet('空间建模',`<p class="sheet-description">查看家庭空间结构，了解各空间的对应关系。</p><div class="model-preview"><img src="assets/space-floorplan.png" alt="家庭空间模型"></div><div class="model-summary"><span>${rooms.length} 个空间</span><span>${rooms.reduce((n,r)=>n+r.devices,0)} 台设备</span></div><div class="model-room-tags">${rooms.map(r=>`<span><i style="background:${r.color}"></i>${esc(r.name)}</span>`).join('')}</div><button class="primary-button" id="model-done">完成</button>`,{restoreFocus:()=>$('#view-model').focus({preventScroll:true})});$('#model-done').onclick=()=>sheet.close();
 }
-function getRoomState(room){const value=$('#app').dataset.boxConnection==='unavailable'?{...room,observed:false,airQuality:null}:room;return deriveSpaceState(value,deviceStore?.getDevices()||[],peoplePage?.getRecognitionProfiles()||[]);}
+function getRoomState(room){const value=$('#app').dataset.boxConnection==='unavailable'?{...room,observed:false,airQuality:null}:room;const state=deriveSpaceState(value,deviceStore?.getDevices()||[],peoplePage?.getRecognitionProfiles()||[]);return guestPreview?guestSpaceState(state):state;}
 function openRoom(id=selected){
   const r=rooms.find(room=>room.id===id);if(!r)return;
   const state=getRoomState(r);
   const returnTo=selector=>{openRoom(id);sheet.querySelector(selector)?.focus({preventScroll:true});};
-  openSheet(r.name,`${spaceDetailContent(state,r)}<div class="space-action-list"><button id="room-edit">${uiIcon('edit')}<span>修改名称</span>${uiIcon('chevron')}</button><button id="delete-room" class="danger" ${rooms.length<=1?'disabled':''}>${uiIcon('trash')}<span>删除空间</span>${uiIcon('chevron')}</button></div>`,{restoreFocus:()=>homeVisible()?$('#home-context .hc-room-status')?.focus({preventScroll:true}):restoreRoomFocus(r.id)});
+  openSheet(r.name,`${spaceDetailContent(state,r)}${guestPreview?'':`<div class="space-action-list"><button id="room-edit">${uiIcon('edit')}<span>修改名称</span>${uiIcon('chevron')}</button><button id="delete-room" class="danger" ${rooms.length<=1?'disabled':''}>${uiIcon('trash')}<span>删除空间</span>${uiIcon('chevron')}</button></div>`}`,{restoreFocus:()=>homeVisible()?$('#home-context .hc-room-status')?.focus({preventScroll:true}):restoreRoomFocus(r.id)});
   sheet.dataset.content='space-state-detail';
+  if(guestPreview)return;
   $('#room-edit').onclick=()=>editRoom(r.id,{returnTo:()=>returnTo('#room-edit')});
   $('#delete-room').onclick=()=>confirmDelete(r,{returnTo:()=>returnTo('#delete-room')});
 }
@@ -375,7 +381,12 @@ document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==='memory'){memoryPage.open();return;}
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!sheet.open&&!homeVisible()){if($('#app').dataset.view==='chat'){e.preventDefault();conversation.back();}else if($('#app').dataset.view==='device-onboarding'){e.preventDefault();deviceOnboarding.back();}else if($('#app').dataset.view==='people'){e.preventDefault();peoplePage.back();}else if($('#app').dataset.view==='profile-detail'){e.preventDefault();minePage.back();}else if($('#app').dataset.view==='attention')backToConsciousness();else if($('#app').dataset.view==='memory-detail'){e.preventDefault();memoryPage.back();}else if($('#app').dataset.view==='device-detail'){e.preventDefault();deviceDetail.back();}else if($('#app').dataset.view==='spaces'&&spaceReturn==='profile'){minePage.openSection('family',true);}else if($('#app').dataset.view==='device-settings'){devicesPage.open();$('#device-settings').focus({preventScroll:true});}else backHome();}});
-consciousness=createConsciousness({seedMode:freshFamily?'empty':isolatedAccountPreview?'family':'normal',icon:uiIcon,openSheet,getRooms:()=>rooms,onOpenAttention:()=>homeServices?.open()});
+const careMembers=guestPreview?[]:accountStore.participants();
+const careMemorySeeds=freshFamily||guestPreview?[]:elderMemories.filter(entry=>careMembers.some(person=>person.id===entry.personId) && (!entry.ownerId || careMembers.some(person=>person.id===entry.ownerId)));
+deviceStore=createDeviceStore({elderExamples:careMemorySeeds.length>0,initialDevices:accountBusiness?.devices,seedMode:freshFamily?'empty':'normal',offline:firstUseMode==='offline',getRooms:()=>rooms,onChange:handleDeviceChange,onRecord:recordDeviceFeedback,onReceipt:data=>showReceipt(data)});
+// 本地虚构的协同事件回看样例：只描述预置反馈，不在打开首页时发出控制。
+const viewingExample={id:'living-viewing-event',title:'已为客厅观影调整灯光和净化',summary:'主灯亮度35%，净化低噪运行；其他空间保留原安排',status:'已完成',state:'past',scope:'family',kind:'event',operationKind:'event',careEvent:true,deviceIds:['living-lamp','living-air'],image:'assets/home-card-lamp.png',entries:[[previewNow()-18*60000,'协同设备反馈','客厅主灯反馈35%，空气置地机反馈低噪运行；环境目标尚待数据验证']],reason:'你希望客厅观影时灯光柔和，净化继续运行并减少设备打扰。本次结合这两个需要安排设备',evidence:[{source:'本次观影要求',value:'客厅灯光柔和一些，净化继续运行并保持低噪',label:'用户要求'},{source:'客厅主灯与空气置地机反馈',value:'主灯亮度35%，净化处于低噪模式',label:'设备反馈'}],steps:[{label:'灯光反馈',text:'客厅主灯已反馈亮度35%'},{label:'净化反馈',text:'空气置地机已反馈低噪运行；空气改善尚未验证'}],next:'可直接告诉小元哪里需要调整或理解有误，确认后处理这一次'};
+consciousness=createConsciousness({careSeeds:[...elderCareServices(deviceStore,careMembers),viewingExample],seedMode:freshFamily?'empty':isolatedAccountPreview?'family':'normal',icon:uiIcon,openSheet,getRooms:()=>rooms,onOpenAttention:()=>homeServices?.open()});
 const saveRecord=consciousness.record;
 consciousness.record=data=>{const result=saveRecord(data);homeServices?.record(data);return result;};
 function recordDeviceFeedback(data){
@@ -426,7 +437,6 @@ function handleDeviceChange(change){
   }
   syncDeviceCounts();
 }
-deviceStore=createDeviceStore({initialDevices:accountBusiness?.devices,seedMode:freshFamily?'empty':'normal',offline:firstUseMode==='offline',getRooms:()=>rooms,onChange:handleDeviceChange,onRecord:recordDeviceFeedback,onReceipt:data=>showReceipt(data)});
 function openAddDevice(){
   if(memberPreview){toast('设备接入由管理员维护');return;}
   deviceOnboarding.open();
@@ -438,10 +448,10 @@ deviceConnections=createDeviceConnections({seedAccounts:!freshFamily,store:devic
 deviceOnboarding=createDeviceOnboarding({page:$('#device-onboarding-page'),store:deviceStore,connections:deviceConnections,getRooms:()=>rooms,getFamilyName:()=>$('#home-title').textContent,setView,openSheet,toast,icon:uiIcon,onBack:({showAll=false}={})=>{devicesPage.open({showAll});$('#devices-add').focus({preventScroll:true});}});
 deviceDetail=createDeviceDetail({page:$('#device-detail-page'),store:deviceStore,connections:deviceConnections,getRooms:()=>rooms,setView,openSheet,toast,icon:uiIcon,onBack:id=>{if(homeDeviceReturn){const target=homeDeviceReturn;homeDeviceReturn=null;restoreServiceOrigin(target);return;}devicesPage.open();const trigger=[...$('#devices-page').querySelectorAll('[data-device-detail]')].find(button=>button.dataset.deviceDetail===id);(trigger||$('#devices-page').querySelector('[data-filter][aria-selected="true"]'))?.focus({preventScroll:true});},onSettings:id=>deviceSettings.editDevice(id,{restoreFocus:()=>$('#device-detail-page').querySelector('#dd-settings')?.focus({preventScroll:true})})});
 const memoryStorageKey='origin-memory-dialogue:'+(requestedAccountToken || (firstUseMode ? accountToken : 'normal'));
-const savedMemory=readMemoryDialogue(sessionStorage,memoryStorageKey);
+const savedMemory=guestPreview?null:readMemoryDialogue(sessionStorage,memoryStorageKey);
 let memoryLastAt=Math.max(0,...(savedMemory?.records || []).map(x=>Number(x.updatedAt)||0),...(savedMemory?.threads || []).flatMap(x=>(x.messages || []).map(m=>Number(m.at)||0)));
 const memoryNow=()=>memoryLastAt=Math.max(previewNow(),memoryLastAt+1);
-memoryStore=createMemoryStore({now:memoryNow,getMemberId:accountStore?()=>accountStore.current()?.id:null,initialRecords:savedMemory?.records || accountBusiness?.memories,personalSeeds:accountStore&&!freshFamily?[{id:'memory-mom-private',ownerId:'person-mom',text:'晚上想和小元聊一会儿，再慢慢准备休息',subject:'妈妈'},{id:'memory-dad-private',ownerId:'person-dad',text:'整理我的阅读笔记时，先保留原句和出处',subject:'爸爸'},{id:'memory-yu-private',ownerId:'person-yu',text:'准备我的工作汇报时，先给一页结论',subject:'你'}]:[],seedMode:freshFamily?'empty':isolatedAccountPreview?'family':'normal',getRooms:()=>rooms,onRecord:data=>consciousness.record(data)});
+memoryStore=createMemoryStore({careMemorySeeds,now:memoryNow,getMemberId:accountStore?()=>accountStore.current()?.id:null,initialRecords:savedMemory?.records || accountBusiness?.memories,personalSeeds:accountStore&&!freshFamily&&!guestPreview?[{id:'memory-mom-private',ownerId:'person-mom',text:'晚上想和小元聊一会儿，再慢慢准备休息',subject:'妈妈'},{id:'memory-dad-private',ownerId:'person-dad',text:'整理我的阅读笔记时，先保留原句和出处',subject:'爸爸'},{id:'memory-yu-private',ownerId:'person-yu',text:'准备我的工作汇报时，先给一页结论',subject:'你'}]:[],seedMode:freshFamily||guestPreview?'empty':isolatedAccountPreview?'family':'normal',getRooms:()=>rooms,onRecord:data=>consciousness.record(data)});
 const memoryDialogue=createMemoryDialogue({store:memoryStore,getActor:()=>accountStore.current(),getRooms:()=>rooms,storage:sessionStorage,storageKey:memoryStorageKey,initial:savedMemory || {threads:accountBusiness?.memoryThreads || []},now:memoryNow,failWrite:accountParams.get('memory-check')==='retry'});
 memoryPage=createMemoryPage({page:$('#memory-page'),detailPage:$('#memory-detail-page'),store:memoryStore,getRooms:()=>rooms,setView,openSheet,toast,icon:uiIcon,onConverse:options=>conversation.openMemoryCorrection(options),onAdd:options=>conversation.openMemoryCorrection(options)});
 peoplePage=createPeoplePage({memberMode:!!accountStore,seedPeople:!accountStore&&!freshFamily,page:$('#people-page'),setView,openSheet,toast,onRecord:data=>consciousness.record(data),onChange:profiles=>{if(accountStore)persistRecognition(profiles);minePage?.refresh();homeContext?.refresh();},onBack:()=>accountStore?minePage.openSection('self'):peopleReturn?.view==='profile-detail'?minePage.openSection(peopleReturn.section,true):minePage.back()});
@@ -465,11 +475,9 @@ function mountMemberRecognition(member,container,{draft=false,onChange=()=>{}}={
 }
 peoplePage.getParticipants=()=>accountStore.participants();
 peoplePage.getRecognitionProfiles=()=>accountStore.snapshot().members.map(m=>({id:m.id,name:m.name,photo:m.photo,enabled:m.enabled,sources:[m.photo?'face':null,m.samples.length?'voice':null].filter(Boolean)}));
-minePage=createAccountCenter({store:accountStore,page:$('#mine-page'),detailPage:$('#mine-detail-page'),setView,openSheet,toast,legacy:minePage,getRooms:()=>rooms,getDevices:()=>deviceStore.getDevices(),onMountRecognition:mountMemberRecognition,onClearRecognition:()=>{inlineMemberRecognition?.destroy();inlineMemberRecognition=null;},onFamilyName:()=>openFamilyName({returnTo:()=>{accountStore.renameFamily($('#home-title').textContent);minePage.openSection('family');}}),onSpaces:openManage,onEnter:accountJourney});
+if(!guestPreview)minePage=createAccountCenter({store:accountStore,page:$('#mine-page'),detailPage:$('#mine-detail-page'),setView,openSheet,toast,legacy:minePage,getRooms:()=>rooms,getDevices:()=>deviceStore.getDevices(),onMountRecognition:mountMemberRecognition,onClearRecognition:()=>{inlineMemberRecognition?.destroy();inlineMemberRecognition=null;},onFamilyName:()=>openFamilyName({returnTo:()=>{accountStore.renameFamily($('#home-title').textContent);minePage.openSection('family');}}),onSpaces:openManage,onEnter:accountJourney});
 window.addEventListener('pagehide',persistAccountBusiness);
-homeServices=createHomeServices({container:$('#home-services'),listPage:$('#home-services-page'),source:()=>({services:consciousness.getServices(),records:consciousness.getRecords()}),getDevices:()=>deviceStore.getDevices(),getRooms:()=>rooms,openSheet,toast,icon:uiIcon,setView,onBack:backHome,onDeviceDetail:openHomeDevice,onConverse:converseFromService,onRecord:data=>consciousness.record(data),onRestoreControl:restoreCareDevice,getControls:id=>deviceStore.getControls(id),onEventControl:adjustCareEventDevice});
-// 本地虚构的协同事件回看样例：只描述预置反馈，不在打开首页时发出控制。
-if(!freshFamily)consciousness.record({experienceId:'living-viewing-event',title:'已为客厅观影调整灯光和净化',summary:'主灯亮度35%，净化低噪运行；其他空间保留原安排',status:'已完成',state:'past',scope:'family',kind:'event',operationKind:'event',careEvent:true,deviceIds:['living-lamp','living-air'],image:'assets/home-card-lamp.png',at:previewNow()-18*60000,label:'协同设备反馈',text:'客厅主灯反馈35%，空气置地机反馈低噪运行；环境目标尚待数据验证',reason:'你希望客厅观影时灯光柔和，净化继续运行并减少设备打扰。本次结合这两个需要安排设备',evidence:[{source:'本次观影要求',value:'客厅灯光柔和一些，净化继续运行并保持低噪',label:'用户要求'},{source:'客厅主灯与空气置地机反馈',value:'主灯亮度35%，净化处于低噪模式',label:'设备反馈'}],steps:[{label:'灯光反馈',text:'客厅主灯已反馈亮度35%'},{label:'净化反馈',text:'空气置地机已反馈低噪运行；空气改善尚未验证'}],next:'可直接告诉小元哪里需要调整或理解有误，确认后处理这一次'});
+homeServices=createHomeServices({readOnlyEvents:guestPreview,container:$('#home-services'),listPage:$('#home-services-page'),source:()=>{const data={services:consciousness.getServices(),records:consciousness.getRecords()};return guestPreview?guestCareData(data):data;},getDevices:()=>deviceStore.getDevices(),getRooms:()=>rooms,openSheet,toast,icon:uiIcon,setView,onBack:backHome,onDeviceDetail:openHomeDevice,onConverse:converseFromService,onRecord:data=>consciousness.record(data),onRestoreControl:restoreCareDevice,getControls:id=>deviceStore.getControls(id),onEventControl:adjustCareEventDevice});
 function rememberScenarioMemory(entry){
   const {memoryId,enabled,...value}=entry;
   if(!memoryId)return memoryStore.create({...value,enabled,type:'long',visibility:'family'});
@@ -477,11 +485,12 @@ function rememberScenarioMemory(entry){
   const result=memoryStore.update(memoryId,{...value,type:'long',visibility:'family'});
   return result.ok&&typeof enabled==='boolean'&&result.item.enabled!==enabled?memoryStore.setEnabled(memoryId,enabled):result;
 }
-homeContext=createHomeContext({hasSpatialModel,seedInsights:!freshFamily&&!accountBusiness,container:$('#home-context'),getRooms:()=>rooms,getPeople:()=>peoplePage.getParticipants(),getSpaceState:getRoomState,getMemories:()=>memoryStore.getMemories(),onRemember:rememberScenarioMemory,store:deviceStore,openSheet,toast,icon:uiIcon,onSpaceDetail:id=>openRoom(id),onDeviceDetail:openHomeDevice,onService:updateHomeService,onRecord:data=>consciousness.record(data),onServiceDetail:id=>homeServices.openDetail(id)});
+homeContext=createHomeContext({readOnly:guestPreview,showAlerts:!guestPreview,hasSpatialModel,seedInsights:!guestPreview&&!freshFamily&&!accountBusiness,container:$('#home-context'),getRooms:()=>rooms,getPeople:()=>peoplePage.getParticipants(),getSpaceState:getRoomState,getMemories:()=>memoryStore.getMemories(),onRemember:rememberScenarioMemory,store:deviceStore,openSheet,toast,icon:uiIcon,onSpaceDetail:id=>openRoom(id),onDeviceDetail:openHomeDevice,onService:updateHomeService,onRecord:data=>consciousness.record(data),onServiceDetail:id=>homeServices.openDetail(id)});
 let overviewHeight=$('#home-context').offsetHeight;
 $('#home-context').addEventListener('homecontext:heightchange',()=>{const next=$('#home-context').offsetHeight,scroller=$('#home-scroll');if(scroller.scrollTop>120)scroller.scrollTop+=next-overviewHeight;overviewHeight=next;});
 syncDeviceCounts();
-conversation=createConversation({memoryDialogue,seedConversations:!firstUseMode,icon:uiIcon,setView,onHome:()=>{if(homeConversationReturn){const origin=homeConversationReturn;homeConversationReturn=null;restoreServiceOrigin(origin);}else backHome();},openSheet,toast,getRooms:()=>rooms,getLampLevel:()=>{const lamp=deviceStore.get('living-lamp');return lamp?.power?lamp.level:0;},getLampDevice:()=>deviceStore.get('living-lamp'),onRecord:data=>consciousness.record(data),startAir:()=>{if(!event||event.ended||event.mode!=='air'||event.source!=='chat')startEvent('air',{source:'chat'});return event;},cancelAir:id=>{if(event?.id===id&&!event.ended)clearEvent(true);},onDevice:data=>{const lamp=deviceStore.get('living-lamp');if(lamp?.roomId==='living'&&lamp.online&&lamp.permissions.control&&!lamp.pending)showReceipt({deviceId:lamp.id,roomId:lamp.roomId,kind:'lamp',name:lamp.name,summary:data.summary,image:lamp.image,percentage:data.percentage});}});
+conversation=createConversation({requestNotice:guestPreview?guestConversationNotice:null,memoryDialogue,seedConversations:!firstUseMode,icon:uiIcon,setView,onHome:()=>{if(homeConversationReturn){const origin=homeConversationReturn;homeConversationReturn=null;restoreServiceOrigin(origin);}else backHome();},openSheet,toast,getRooms:()=>rooms,getLampLevel:()=>{const lamp=deviceStore.get('living-lamp');return lamp?.power?lamp.level:0;},getLampDevice:()=>deviceStore.get('living-lamp'),onRecord:data=>consciousness.record(data),startAir:()=>{if(!event||event.ended||event.mode!=='air'||event.source!=='chat')startEvent('air',{source:'chat'});return event;},cancelAir:id=>{if(event?.id===id&&!event.ended)clearEvent(true);},onDevice:data=>{const lamp=deviceStore.get('living-lamp');if(lamp?.roomId==='living'&&lamp.online&&lamp.permissions.control&&!lamp.pending)showReceipt({deviceId:lamp.id,roomId:lamp.roomId,kind:'lamp',name:lamp.name,summary:data.summary,image:lamp.image,percentage:data.percentage});}});
+if(guestPreview){const guestPages=createGuestPages({memoryPage:$('#memory-page'),profilePage:$('#mine-page'),setView,toast});memoryPage=guestPages.memory;minePage=guestPages.profile;$('#home-name').disabled=true;$('#home-name').setAttribute('aria-label','当前家庭');$('#manage-spaces').hidden=true;}
 $('#back-home').innerHTML=uiIcon('back');
 if(!freshFamily)consciousness.updateCurrent(currentExpression());
 // Space rotation is owned by home-context; no automatic device changes or idle-thought carousel.
@@ -496,4 +505,4 @@ if(accountStore){const open=accountParams.get('account-open');if(open==='profile
 accountStore.subscribe(()=>{minePage?.refresh();homeContext?.refresh();});
 memoryStore.subscribe(()=>{if(parent!==window)parent.postMessage({type:'origin-account-shared-update',state:accountStore.snapshot(),business:accountBusinessSnapshot()},location.origin==='null'?'*':location.origin);});
 installAccountReviewBridge($('#app'));
-if(!accountStore.current())accountJourney();
+if(!guestPreview&&!accountStore.current())accountJourney();

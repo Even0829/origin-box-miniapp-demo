@@ -1,4 +1,5 @@
 // Local review model. No WeChat, box discovery or biometric verification is performed.
+import {grandpa, grandma} from './elder-care-demo.js';
 export const ACCOUNT_BUILD='simple-invites-20261113';
 export const JOIN_INVITE='invite-new', CLAIM_INVITE='invite-mom';
 export const FAMILY_ROLES=['爸爸','妈妈','爷爷','奶奶','外公','外婆','儿子','女儿'];
@@ -12,6 +13,10 @@ export function seedAccountCase(scenario='visitor'){
   const existing=['admin','member','invite','claim','invite-expired','invite-cancelled'].includes(scenario);
   const local=scenario==='local-box';
   const members=existing?[person('person-yu','小雨','女儿','wx-admin',{permission:'admin'}),person('person-mom','妈妈','妈妈',null,{birthday:'1965-05-18',photo:'assets/person-mom-photo.png',samples:sample()}),person('person-dad','爸爸','爸爸','wx-dad')]:local?[person('person-mom','妈妈','妈妈',null,{photo:'assets/person-mom-photo.png',samples:sample()})]:[];
+  if(existing) members.push(
+    person(grandpa.id, grandpa.name, '爷爷', null, {birthday:'1948-03-12', avatar:'assets/grandpa-avatar.jpg', photo:'assets/grandpa-face.jpg', samples:[{id:'voice-grandpa',url:'assets/grandpa-voice.wav',duration:5.35,preset:true}]}),
+    person(grandma.id, grandma.name, '奶奶', null, {birthday:'1950-09-08', avatar:'assets/grandma-avatar.jpg', photo:'assets/grandma-face.jpg', samples:[{id:'voice-grandma',url:'assets/grandma-voice.wav',duration:5.51,preset:true}]})
+  );
   const invitations=existing?[{id:JOIN_INVITE,kind:'new',targetId:null,status:'valid',expiresAt:Date.now()+86400000},{id:CLAIM_INVITE,kind:'claim',targetId:'person-mom',status:scenario==='invite-expired'?'expired':scenario==='invite-cancelled'?'cancelled':'valid',expiresAt:Date.now()+(scenario==='invite-expired'?-1000:86400000)}]:[];
   return {version:3,scenario,accounts,actor:['admin'].includes(scenario)?'admin':scenario==='member'?'dad':['claim','invite-expired','invite-cancelled'].includes(scenario)?'mom':'receiver',loggedIn:['signed','admin','member'].includes(scenario),familyName:existing?'潘多拉的家':'我的家',familyFresh:!existing&&!local,localUsed:local,activated:existing,setupComplete:existing,members,invitations,next:10};
 }
@@ -50,7 +55,7 @@ export function createAccountStore({scenario='visitor',initial=null,persist=()=>
   const api={
     snapshot:()=>clone(s),actor:()=>clone(actor()),current:()=>self()?clone(self()):null,isAdmin:admin,
     members:()=>clone(admin()?s.members:self()?[self()]:[]),
-    participants:()=>s.members.map(({id,name,enabled})=>({id,name,enabled})),
+    participants:()=>s.members.map(({id,name,enabled,role,avatar})=>({id,name,enabled,role,avatar})),
     subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},
     login(){s.loggedIn=true;emit();return {ok:true};},
     validate,

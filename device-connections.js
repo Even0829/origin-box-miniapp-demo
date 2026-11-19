@@ -1,3 +1,5 @@
+import { RADAR_IMAGE } from './device-demo-catalog.js?v=care-device-sources-20261118';
+
 // 账号、授权和厂商设备清单均为本次运行内的本地数据；不发起厂商请求。
 // 厂商授权范围与加入引元家庭的设备集合分别维护。
 const PROVIDERS = [
@@ -76,7 +78,7 @@ export function createDeviceConnections({ store, getRooms, seedAccounts = true }
       environment(providerId, accountId, homeId, { id: `ty-study-climate${suffix}`, name: '书房温湿度传感器', manufacturerRoom: '书房' }),
       candidate(providerId, accountId, homeId, {
         id: `ty-second-presence${suffix}`, name: '次卧在场传感器', manufacturerRoom: '次卧', type: 'presence',
-        image: 'assets/device-radar.png', online: false, capabilities: ['在场感知'], inputCapabilities: ['在场'],
+        image: RADAR_IMAGE, online: false, capabilities: ['在场感知'], inputCapabilities: ['在场'],
       }),
       candidate(providerId, accountId, homeId, {
         id: `ty-bedroom-air${suffix}`, name: '卧室空气置地机', manufacturerRoom: '主卧', type: 'air', image: 'assets/device-air.png',

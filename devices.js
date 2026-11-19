@@ -93,12 +93,13 @@ export function createDevicesPage({hasSpatialModel=true,page,store,getRooms,getF
 
   function cardMarkup(device){
     const controllable=typeof device.power==='boolean',waiting=!!device.pending;
+    const location=escapeHTML(`${roomName(device.roomId)}｜${device.source||'来源待更新'}`);
     return `<article class="device-card${device.online?'':' is-offline'}" data-device-card="${escapeHTML(device.id)}" data-device-type="${escapeHTML(device.type)}">
       <button class="device-card-open" data-device-detail="${escapeHTML(device.id)}" aria-label="查看${escapeHTML(device.name)}信息">
         <span class="device-card-picture"><img src="${escapeHTML(device.image||'assets/device-radar.png')}" alt="" loading="lazy"></span>
         <span class="device-online-state"><i aria-hidden="true"></i>${device.online?'在线':'离线'}</span>
         <strong class="device-card-name">${escapeHTML(device.name)}</strong>
-        <span class="device-card-location">${escapeHTML(roomName(device.roomId))}｜${escapeHTML(device.source)}</span>
+        <span class="device-card-location" title="${location}">${location}</span>
         <span class="device-card-state${controllable?' has-control':''}${waiting?' is-pending':''}" aria-live="polite">${escapeHTML(cardState(device))}</span>
       </button>
       ${controllable?`<button class="device-power" data-device-power="${escapeHTML(device.id)}" role="switch" aria-checked="${device.power}" aria-busy="${waiting}" aria-label="${device.power?'关闭':'开启'}${escapeHTML(device.name)}" ${!device.online||waiting?'disabled':''}><span class="asset device-power-art" aria-hidden="true"><img src="assets/device-switch-${device.power?'on':'off'}.svg" alt=""></span></button>`:''}
@@ -126,7 +127,7 @@ export function createDevicesPage({hasSpatialModel=true,page,store,getRooms,getF
     const members=execution?.devices??[];
     const sameTarget=members.length&&members.every(device=>device.target===members[0].target)?members[0].target:null;
     const targetText=typeof sameTarget==='number'?`目标亮度${sameTarget}%`:typeof target==='string'?target:typeof target==='number'?`目标亮度${target}%`:target?.text??'灯光柔和一些';
-    const inRoom=devices().filter(device=>device.roomId===heroRoomId),hasInput=inRoom.some(device=>device.inputCapabilities?.length),hasResponse=inRoom.some(device=>device.responseCapabilities?.length);
+    const inRoom=devices().filter(device=>device.roomId===heroRoomId),hasInput=inRoom.some(device=>!device.health&&device.inputCapabilities?.length),hasResponse=inRoom.some(device=>device.responseCapabilities?.length);
     const inputOffline=hasInput&&!capability?.inputDevices?.length,responseOffline=hasResponse&&!capability?.responseDevices?.length;
     const shortName=name=>name.replace(/^主卧/u,'').replace('床头灯','灯');
     const feedback=members.slice(0,2).map(device=>`${shortName(device.name)}${device.feedback||(device.status==='confirmed'?`已调至${device.current}%`:'等待反馈')}`);
@@ -196,7 +197,7 @@ export function createDevicesPage({hasSpatialModel=true,page,store,getRooms,getF
 
   function capabilityContent(room,mode){
     if(!room)return '<p class="device-context-empty">这个空间已移除</p>';
-    const input=mode==='input',list=devices().filter(device=>device.roomId===room.id&&(input?device.inputCapabilities?.length:device.responseCapabilities?.length));
+    const input=mode==='input',list=devices().filter(device=>device.roomId===room.id&&(input?!device.health&&device.inputCapabilities?.length:device.responseCapabilities?.length));
     return `<p class="sheet-description">${input?`这些设备为${escapeHTML(room.name)}提供感知信息`:'这些设备可按小元的调度响应调节'}</p><div class="device-context-list">${list.map(device=>`<article class="device-context-item${input?' device-context-source':''}"><img src="${escapeHTML(device.image)}" alt=""><div><header><strong>${escapeHTML(device.name)}</strong><small data-online="${device.online}">${device.online?'在线':'离线'}</small></header>${input?`<span class="device-context-origin">${escapeHTML(device.source)}</span><p class="device-context-purpose">${escapeHTML(sourcePurpose(device))}</p>${sourceReadings(device)}`:`<p>${escapeHTML(device.responseCapabilities.join('、'))}</p><span>${escapeHTML(device.source)}${device.online?'':' · 当前不可用'}</span>`}</div></article>`).join('')}</div>${!list.length?'<p class="device-context-empty">这个空间尚未接入相关设备</p>':''}`;
   }
 

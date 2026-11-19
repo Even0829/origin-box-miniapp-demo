@@ -1,0 +1,13 @@
+.app[data-guest-preview] #home-name,.app[data-guest-preview] #devices-family{pointer-events:none}
+.app[data-guest-preview] #manage-spaces,.app[data-guest-preview] #devices-add,.app[data-guest-preview] #device-settings,.app[data-guest-preview] #dd-settings{display:none!important}
+.gp-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:148px 20px 30px;flex:1;min-height:0}
+.gp-empty h2{font-size:21px;line-height:32px;font-weight:500;color:#273a4a;margin:0}
+.gp-empty p{font-size:13px;line-height:24px;color:#748595;margin:13px 0 0}
+.mp-profile.gp-profile{align-items:center;cursor:default}
+.gp-profile .fu-guest-avatar{position:static;flex:none}
+.gp-profile .mp-profile-copy{margin-left:0}
+.gp-profile .mp-profile-copy>small{margin-top:4px;color:#687d8e}
+.gp-empty.gp-visitor-note{flex:none;padding:74px 0 28px}
+.hsc-guest-note{font-size:12px;line-height:23px;color:#7e8e9a;margin-top:24px;padding:16px;background:#ffffff9c;border-radius:12px}
+
+.app[data-guest-preview] #home-name:disabled{opacity:1;color:inherit}

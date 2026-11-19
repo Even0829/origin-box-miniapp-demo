@@ -1,6 +1,6 @@
 import {previewNow} from './preview-clock.js';
 
-const keys=['power','level','mode','colorTemperature','targetTemperature','fanMode','swingMode'];
+const keys=['power','level','mode','colorTemperature','targetTemperature','fanMode','swingMode','oscillation'];
 const primitive=value=>typeof value==='boolean'||typeof value==='string'||(typeof value==='number'&&Number.isFinite(value));
 const valid=change=>change?.deviceId&&Number.isInteger(change.expectedRevision)&&Object.keys(change.before||{}).length&&Object.entries(change.before).every(([key,value])=>keys.includes(key)&&primitive(value)&&primitive(change.after?.[key]))&&!(change.before.power===false&&Object.keys(change.before).length>1);
 
@@ -18,6 +18,7 @@ export function createCareRestoration({getDevices,requestControl,onChange,onReco
     if('targetTemperature' in value)parts.push(`设定温度${value.targetTemperature}℃`);
     if('fanMode' in value)parts.push(`风速${value.fanMode}`);
     if('swingMode' in value)parts.push(`扫风${value.swingMode}`);
+    if('oscillation' in value)parts.push(`${value.oscillation?'开启':'关闭'}摆头`);
     return `${device?.name||'原设备'}：${parts.join('、')}`;
   }
   function blocked(change){

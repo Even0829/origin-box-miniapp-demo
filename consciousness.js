@@ -1,4 +1,4 @@
-import {previewNow,previewDate} from './preview-clock.js';
+import {previewNow,previewDate,previewAt as at} from './preview-clock.js';
 import {activeCareExamples} from './care-active-preview.js?v=active-care-20261116';
 // One record stream powers the full journal and the selected experiences.
 // This standalone preview uses a fixed illustrative local day and local data only.
@@ -6,7 +6,6 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const trim=value=>String(value??'').replace(/[。．.]+$/u,'');
 const day=Date.parse(previewDate+'T00:00:00+08:00');
 const clock=previewNow;
-const at=(days,hours,minutes)=>day+days*86400000+hours*3600000+minutes*60000;
 const time=value=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false}).format(value);
 const dateKey=value=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(value);
 const dayLabel=value=>dateKey(value)===dateKey(clock())?'今天':dateKey(value)===dateKey(day-86400000)?'昨天':new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'long',day:'numeric'}).format(value);
@@ -85,7 +84,7 @@ const seeds=[
   ]}
 ];
 
-export function createConsciousness({seedMode='normal',icon,openSheet,getRooms,onOpenAttention}){
+export function createConsciousness({careSeeds=[],seedMode='normal',icon,openSheet,getRooms,onOpenAttention}){
   const $=selector=>document.querySelector(selector);
   const host=$('#consciousness-content');
   const experiences=new Map(),logs=[],savedExpressions=new Set();
@@ -95,7 +94,7 @@ export function createConsciousness({seedMode='normal',icon,openSheet,getRooms,o
   const partHold=5000;
   const cardMarkup=new WeakMap();
   const snapshots=[];
-  for(const seed of seeds.filter(item=>seedMode!=='empty'&&(seedMode!=='family'||item.scope!=='personal'))){
+  for(const seed of [...seeds,...careSeeds].filter(item=>seedMode!=='empty'&&(seedMode!=='family'||item.scope!=='personal'))){
     const item={...seed,scope:seed.scope??'family',state:seed.state??'past',updatedAt:seed.entries.at(-1)[0]};
     delete item.entries;experiences.set(item.id,item);
     seed.entries.forEach(([at,label,text])=>logs.push({id:`seed-${serial++}`,experienceId:item.id,at,label,text,scope:item.scope}));

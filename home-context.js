@@ -1,10 +1,10 @@
 import {deriveSpaceState, spaceCardContent} from './home-space-state.js?v=home-people-summary-20261105';
 import {previewNow} from './preview-clock.js';
-import {createHomeScenarios} from './home-scenarios.js?v=first-use-20261110-final';
+import {createHomeScenarios} from './home-scenarios.js?v=guest-preview-20261119';
 const escapeHTML = (value = '') => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const clock = (stamp) => new Date(stamp || previewNow()).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
 
-export function createHomeContext({ hasSpatialModel = true, seedInsights = true, container, getRooms = () => [], getPeople = () => [], getSpaceState = null, getMemories = () => [], onRemember, store, openSheet, toast, icon, onSpaceDetail, onDeviceDetail, onService, onRecord, onServiceDetail } = {}) {
+export function createHomeContext({ readOnly = false, showAlerts = true, hasSpatialModel = true, seedInsights = true, container, getRooms = () => [], getPeople = () => [], getSpaceState = null, getMemories = () => [], onRemember, store, openSheet, toast, icon, onSpaceDetail, onDeviceDetail, onService, onRecord, onServiceDetail } = {}) {
   if (!container || !store) throw new Error('首页空间概览缺少容器或设备状态');
   let selected = getRooms()[0]?.id || null;
   let scenarios = null;
@@ -41,7 +41,7 @@ export function createHomeContext({ hasSpatialModel = true, seedInsights = true,
     <button class="hc-current-mode" type="button" hidden aria-label="查看正在进行的照料"></button>
   </section>
   <section class="hc-modes" aria-label="小元的场景照料"></section>
-  <button type="button" class="hc-alert" hidden><span class="hc-alert-icon"><img src="assets/home-alert.svg" alt=""></span><span class="hc-alert-copy"></span><span class="hc-alert-count" hidden></span><span class="hc-alert-chevron"><img src="assets/home-alert-chevron.svg" alt=""></span></button>`;
+  ${showAlerts?'<button type="button" class="hc-alert" hidden><span class="hc-alert-icon"><img src="assets/home-alert.svg" alt=""></span><span class="hc-alert-copy"></span><span class="hc-alert-count" hidden></span><span class="hc-alert-chevron"><img src="assets/home-alert-chevron.svg" alt=""></span></button>':''}`;
 
   function restartCarousel() {
     clearTimeout(carouselTimer);
@@ -117,8 +117,9 @@ export function createHomeContext({ hasSpatialModel = true, seedInsights = true,
   }
 
   function renderAlert() {
-    const list = alerts();
     const alert = query('.hc-alert');
+    if (!alert) return;
+    const list = alerts();
     const wasHidden = alert.hidden;
     alert.hidden = list.length === 0;
     if (list.length) {
@@ -132,6 +133,7 @@ export function createHomeContext({ hasSpatialModel = true, seedInsights = true,
   }
 
   function openAlerts() {
+    if (!showAlerts) return;
     const list = alerts();
     if (!list.length) { toast?.('当前没有待处理的设备连接问题'); return; }
     closePopup();
@@ -225,7 +227,7 @@ export function createHomeContext({ hasSpatialModel = true, seedInsights = true,
   container.addEventListener('keydown', onKeydown);
   document.addEventListener('pointerdown', onOutsidePointer);
   document.addEventListener('visibilitychange', onVisibility);
-  scenarios = createHomeScenarios({seedInsights,container, store, getRooms, getPeople, getMemories, onRemember, openSheet, toast, icon, onService, onRecord, onServiceDetail, onDeviceDetail});
+  scenarios = createHomeScenarios({readOnly,seedInsights,container, store, getRooms, getPeople, getMemories, onRemember, openSheet, toast, icon, onService, onRecord, onServiceDetail, onDeviceDetail});
   const unsubscribe = store.subscribe(refresh);
   // 初次呈现一个可定位、可恢复的来源离线状态，与设备页共用同一对象。
   const humiditySource = store.get('bathroom-humidity');

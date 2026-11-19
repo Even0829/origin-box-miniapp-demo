@@ -1,5 +1,5 @@
 import {previewNow} from './preview-clock.js';
-import {createCareRestoration} from './care-restoration.js?v=care-card-actions-20261021';
+import {createCareRestoration} from './care-restoration.js?v=care-devices-20261118';
 import {createEventAdjustment} from './event-adjustment.js?v=active-care-20261116';
 
 const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -68,7 +68,7 @@ const seedNotes={
 };
 
 /** A read-only projection of the shared service and record stream. */
-export function createHomeServices({container,listPage,source,getDevices=()=>[],getRooms=()=>[],getControls=()=>[],openSheet,toast,icon,setView,onBack,onDeviceDetail,onConverse,onRecord,onRestoreControl,onEventControl}){
+export function createHomeServices({readOnlyEvents=false,container,listPage,source,getDevices=()=>[],getRooms=()=>[],getControls=()=>[],openSheet,toast,icon,setView,onBack,onDeviceDetail,onConverse,onRecord,onRestoreControl,onEventControl}){
   const document=container.ownerDocument;
   const sheet=document.querySelector('#sheet');
   const supplements=new Map();
@@ -123,6 +123,12 @@ export function createHomeServices({container,listPage,source,getDevices=()=>[],
     const text=`${item.title} ${item.summary} ${entriesFor(item.id).map(row=>row.text).join(' ')}`;
     return all.filter(device=>device.name&&text.includes(device.name));
   }
+  function eventControlDevices(item){
+    return inferredDevices(item).filter(device=>device.permissions?.read&&device.permissions?.control);
+  }
+  function eventDeviceLabel(devices){
+    return devices.some(device=>device.online)?'调整设备':'查看设备';
+  }
   function picture(item){
     const linked=inferredDevices(item);
     if(isEvent(item)&&linked.length>1)return `<span class="hs-card-picture hs-picture-event" aria-hidden="true">${linked.slice(0,2).map(device=>`<img src="${e(device.image)}" alt="">`).join('')}</span>`;
@@ -136,7 +142,17 @@ export function createHomeServices({container,listPage,source,getDevices=()=>[],
     const action=cardAction(item),restore=restorations.info(item),editable=inferredDevices(item).some(device=>typeof device.power==='boolean');
     const title=restore?.status==='done'?restore.title:item.title,summary=restore?.status==='done'?restore.summary:item.summary;
     const restoreLabel=restore?.status==='running'?'正在恢复':restore?.status==='done'?'已恢复':restore?.status==='failed'?'重试恢复':'恢复调整前';
-    const operations=isEvent(item)?`<button class="hs-card-operation" data-hs-control="${e(item.id)}" aria-label="调整或纠正：${e(title)}">${adjustIcon}<span>调整或纠正</span></button>`:editable?`<button class="hs-card-operation" data-hs-restore="${e(item.id)}" aria-label="${e(restoreLabel)}：${e(title)}" ${restore?.disabled?'disabled':''}>${restoreIcon}<span>${e(restoreLabel)}</span></button><span class="hs-action-divider" aria-hidden="true"></span><button class="hs-card-operation" data-hs-custom="${e(item.id)}" aria-label="自定义调整：${e(title)}">${adjustIcon}<span>自定义调整</span></button>`:`<button class="hs-card-operation" data-hs-control="${e(item.id)}" aria-label="${e(action.label)}：${e(title)}">${adjustIcon}<span>${e(action.label)}</span></button>`;
+    let operations;
+    if(readOnlyEvents&&isEvent(item)){
+      const related=eventControlDevices(item),label=eventDeviceLabel(related);
+      operations=related.length?`<button class="hs-card-operation" data-hs-custom="${e(item.id)}" aria-label="${label}：${e(title)}">${adjustIcon}<span>${label}</span></button>`:'';
+    }else if(isEvent(item)){
+      operations=`<button class="hs-card-operation" data-hs-control="${e(item.id)}" aria-label="调整或纠正：${e(title)}">${adjustIcon}<span>调整或纠正</span></button>`;
+    }else if(editable){
+      operations=`<button class="hs-card-operation" data-hs-restore="${e(item.id)}" aria-label="${e(restoreLabel)}：${e(title)}" ${restore?.disabled?'disabled':''}>${restoreIcon}<span>${e(restoreLabel)}</span></button><span class="hs-action-divider" aria-hidden="true"></span><button class="hs-card-operation" data-hs-custom="${e(item.id)}" aria-label="自定义调整：${e(title)}">${adjustIcon}<span>自定义调整</span></button>`;
+    }else{
+      operations=`<button class="hs-card-operation" data-hs-control="${e(item.id)}" aria-label="${e(action.label)}：${e(title)}">${adjustIcon}<span>${e(action.label)}</span></button>`;
+    }
     return `<button class="hs-card-open" data-hs-open="${e(item.id)}" aria-label="${e(title)}，查看为什么这么做"><span class="hs-card-main">${picture(item)}<span class="hs-card-copy"><strong>${e(title||'服务进展已更新')}</strong><span class="hs-card-summary">${e(summary)}</span><span class="hs-card-stamp">${item.scope==='personal'?'<span class="hs-personal">仅自己</span>':''}<time>${e(moment(restore?.at||item.at))}</time></span></span></span></button><div class="hs-card-footer"><button class="hs-card-why" data-hs-why="${e(item.id)}">为什么这么做${chevron}</button><div class="hs-card-operations">${operations}</div></div>`;
   }
   function cardAction(item){
@@ -177,7 +193,7 @@ export function createHomeServices({container,listPage,source,getDevices=()=>[],
   function orderedServices(){
     const all=services(),ids=new Set(all.map(item=>item.id));
     order=order.filter(id=>ids.has(id));
-    const initialPriority=item=>item.scope==='personal'?1:0;
+    const initialPriority=item=>item.previewPriority ?? (item.scope==='personal'?1:0);
     const newItems=all.filter(item=>!order.includes(item.id)).sort((a,b)=>initialPriority(a)-initialPriority(b)||(b.at??0)-(a.at??0));
     order=[...newItems.map(item=>item.id),...order];
     const map=new Map(all.map(item=>[item.id,item]));
@@ -202,12 +218,16 @@ export function createHomeServices({container,listPage,source,getDevices=()=>[],
     [...host.querySelectorAll('[data-hs-id]')].find(node=>node.dataset.hsId===id)?.querySelector(action?'[data-hs-custom],[data-hs-control]':'[data-hs-open]')?.focus({preventScroll:true});
   }
   function openDeviceControls(item,{fromDetail=false}={}){
-    const related=inferredDevices(item);
+    const guestEvent=readOnlyEvents&&isEvent(item);
+    const related=guestEvent?eventControlDevices(item):inferredDevices(item);
+    if(guestEvent&&!related.length){toast?.('暂时没有可用设备');return;}
     if(!related.length){openCorrection(item);return;}
     if(fromDetail)saveSheetPosition();
     const go=device=>{if(sheet.open)sheet.close();onDeviceDetail?.(device.id,{serviceId:item.id,returnTo:view,fromCard:!fromDetail});};
     if(related.length===1){go(related[0]);return;}
-    openSheet('调整这次照料',`<p class="sheet-description">选择需要调整的设备，按当前需要修改。</p><div class="hs-related hs-adjust-devices">${related.map(device=>`<button data-hs-adjust-device="${e(device.id)}"><span><strong>${e(device.name)}</strong><small>${e(roomName(device.roomId))} · ${e(device.online===false?'离线，查看连接':device.statusText??'查看设备')}</small></span>${chevron}</button>`).join('')}</div>`,{restoreFocus:()=>focusCard(item.id,{action:true})});
+    const title=guestEvent?eventDeviceLabel(related):'调整这次照料';
+    const description=guestEvent?'选择设备，查看状态或调整当前设置。':'选择需要调整的设备，按当前需要修改。';
+    openSheet(title,`<p class="sheet-description">${description}</p><div class="hs-related hs-adjust-devices">${related.map(device=>`<button data-hs-adjust-device="${e(device.id)}"><span><strong>${e(device.name)}</strong><small>${e(roomName(device.roomId))} · ${e(device.online===false?'离线，查看连接':device.statusText??'查看设备')}</small></span>${chevron}</button>`).join('')}</div>`,{onCancel:guestEvent&&fromDetail?()=>openDetail(item.id,{restoreScroll:true}):undefined,restoreFocus:()=>focusCard(item.id,{action:true})});
     sheet.dataset.content='home-service-adjust';
     sheet.querySelectorAll('[data-hs-adjust-device]').forEach(button=>{button.onclick=()=>go(related.find(device=>device.id===button.dataset.hsAdjustDevice));});
   }
@@ -296,9 +316,13 @@ export function createHomeServices({container,listPage,source,getDevices=()=>[],
   }
   function detailMarkup(item){
     const rows=entriesFor(item.id),evidence=evidenceFor(item,rows),steps=stepsFor(item,rows),related=inferredDevices(item);
-    return `${detailFromRecords?`<button class="hs-detail-return" data-hs-sheet="records">${glyph('back')}返回全部记录</button>`:''}<div class="hs-detail-intro"><div class="hs-detail-meta"><time>${e(moment(item.at))}</time><span data-tone="${tone(item)}">${e(statusText(item))}</span>${item.scope==='personal'?'<span>仅自己可见</span>':''}</div><h3>${e(item.title)}</h3><p>${e(item.summary)}</p></div><section class="hs-detail-section"><h3>为什么这么做</h3><p>${e(reasonFor(item))}</p>${correctionMarkup(item)}</section><section class="hs-detail-section"><h3>依据什么</h3>${evidence.length?`<div class="hs-evidence-list">${evidence.map(row=>`<div class="hs-evidence"><div><strong>${e(row.source)}</strong>${row.label?`<span>${e(row.label)}</span>`:''}</div><p>${e(row.value)}</p>${stamp(row.at)?`<time>${e(moment(row.at))}</time>`:''}</div>`).join('')}</div>`:'<p class="hs-detail-muted">现有记录未保留更多来源数据</p>'}</section><section class="hs-detail-section"><h3>执行经过</h3>${steps.length?`<ol class="hs-steps">${steps.map(step=>`<li><div><strong>${e(step.label)}</strong>${stamp(step.at)?`<time>${e(moment(step.at))}</time>`:''}</div><p>${e(step.text)}</p></li>`).join('')}</ol>`:'<p class="hs-detail-muted">还没有新的执行反馈</p>'}</section><section class="hs-detail-section"><h3>接下来</h3><p>${e(nextFor(item))}</p></section>${related.length?`<section class="hs-detail-section hs-related"><h3>相关设备</h3>${related.map(device=>`<button data-hs-device="${e(device.id)}"><span><strong>${e(device.name)}</strong><small>${e(roomName(device.roomId))} · 当前${device.online===false?'离线':device.statusText??device.cardStatusText??'在线'}</small></span>${chevron}</button>`).join('')}<p class="hs-related-note">这里显示设备当前状态，执行经过保留当时反馈</p></section>`:''}`;
+    return `${detailFromRecords?`<button class="hs-detail-return" data-hs-sheet="records">${glyph('back')}返回全部记录</button>`:''}<div class="hs-detail-intro"><div class="hs-detail-meta"><time>${e(moment(item.at))}</time><span data-tone="${tone(item)}">${e(statusText(item))}</span>${item.scope==='personal'?'<span>仅自己可见</span>':''}</div><h3>${e(item.title)}</h3><p>${e(item.summary)}</p></div><section class="hs-detail-section"><h3>为什么这么做</h3><p>${e(reasonFor(item))}</p>${correctionMarkup(item)}</section><section class="hs-detail-section"><h3>依据什么</h3>${evidence.length?`<div class="hs-evidence-list">${evidence.map(row=>`<div class="hs-evidence"><div><strong>${e(row.source)}</strong>${row.label?`<span>${e(row.label)}</span>`:''}</div><p>${e(row.value)}</p>${stamp(row.at)?`<time>${e(moment(row.at))}</time>`:''}</div>`).join('')}</div>`:'<p class="hs-detail-muted">现有记录未保留更多来源数据</p>'}</section><section class="hs-detail-section"><h3>执行经过</h3>${steps.length?`<ol class="hs-steps">${steps.map(step=>`<li><div><strong>${e(step.label)}</strong>${stamp(step.at)?`<time>${e(moment(step.at))}</time>`:''}</div><p>${e(step.text)}</p></li>`).join('')}</ol>`:'<p class="hs-detail-muted">还没有新的执行反馈</p>'}</section><section class="hs-detail-section"><h3>接下来</h3><p>${e(nextFor(item))}</p></section>${related.length?`<section class="hs-detail-section hs-related"><h3>相关设备</h3>${related.map(device=>`<button data-hs-device="${e(device.id)}"><span><strong>${e(device.name)}</strong><small>${e(roomName(device.roomId))} · 当前${device.online===false?'离线':device.health?'在线':device.statusText??device.cardStatusText??'在线'}</small></span>${chevron}</button>`).join('')}<p class="hs-related-note">这里显示设备当前状态，执行经过保留当时反馈</p></section>`:''}`;
   }
   function actionsMarkup(item){
+    if(readOnlyEvents&&isEvent(item)){
+      const related=eventControlDevices(item);
+      return related.length?`<button class="primary-button" data-hs-sheet="event-device-controls">${eventDeviceLabel(related)}</button>`:'';
+    }
     if(isEvent(item))return '<button class="primary-button" data-hs-sheet="event-adjust">调整或纠正</button>';
     const actions=[];
     if(inferredDevices(item).some(device=>typeof device.power==='boolean'))actions.push('<button class="primary-button" data-hs-sheet="adjust">调整</button>');
@@ -333,6 +357,7 @@ export function createHomeServices({container,listPage,source,getDevices=()=>[],
     else if(sheet.dataset.content==='home-service'&&detailId)detailPositions.set(detailId,{scroll:scroller.scrollTop,fromRecords:detailFromRecords});
   }
   function openEventAdjustment(item,{fromDetail=false}={}){
+    if(readOnlyEvents){toast?.('这项需要家庭成员处理');return;}
     if(fromDetail)saveSheetPosition();
     eventAdjustment.open(item,{onReturn:fromDetail?()=>openDetail(item.id,{restoreScroll:true}):null,restoreFocus:()=>focusCard(item.id,{action:true})});
   }
@@ -421,6 +446,7 @@ export function createHomeServices({container,listPage,source,getDevices=()=>[],
     const target=event.target.closest('[data-hs-sheet]');if(!target)return;
     if(target.dataset.hsSheet==='records'){openRecords({restoreScroll:true});return;}
     const item=findService(detailId);if(!item)return;
+    if(target.dataset.hsSheet==='event-device-controls'&&readOnlyEvents&&isEvent(item)){openDeviceControls(item,{fromDetail:true});return;}
     if(target.dataset.hsSheet==='event-adjust'){openEventAdjustment(item,{fromDetail:true});return;}
     if(target.dataset.hsSheet==='adjust'){adjustDevices(item,{fromDetail:true});return;}
     if(target.dataset.hsSheet==='manage-scene'&&typeof item.manage==='function'){saveSheetPosition();item.manage({onReturn:()=>openDetail(item.id,{restoreScroll:true})});return;}

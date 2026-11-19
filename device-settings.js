@@ -88,6 +88,7 @@ export function createDeviceSettings({ page, store, getRooms, icon, setView, ope
     if (!device) return;
     const account = getConnection?.(device.accountId);
     const capabilities = [...(device.inputCapabilities || []), ...(device.responseCapabilities || [])];
+    if (device.health?.kind === 'medication') capabilities.push('用药计划', '用药记录', '提醒设置');
     const native = device.providerId === 'int';
     const connection = native ? '<div><dt>接入方式</dt><dd>引元盒子自动接入</dd></div>' : `<div><dt>所属账号</dt><dd>${escapeHTML(account ? `${account.name} · ${account.identifier}` : '账号信息暂不可用')}</dd></div><div><dt>账号连接</dt><dd>${account?.status === 'expired' ? '需要重新授权' : account ? '已连接' : '暂未获取'}</dd></div>`;
     openSheet('接入信息', `<div class="ds-assignment-summary"><strong>${escapeHTML(device.name)}</strong><span>${escapeHTML(device.roomName)}</span></div><dl class="device-info-list"><div><dt>接入来源</dt><dd>${escapeHTML(device.source)}</dd></div>${connection}<div><dt>当前支持</dt><dd>${escapeHTML(capabilities.join('、') || '基础状态')}</dd></div></dl><p class="field-hint">${native ? '无需连接品牌账号，设备状态由盒子同步' : '账号连接与设备在线状态分别更新'}</p><div class="dialog-actions"><button class="primary-button" id="ds-connection-done">返回设备设置</button></div>`, { onCancel: () => editDevice(id), restoreFocus: () => focusDevice(id) });

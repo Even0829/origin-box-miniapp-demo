@@ -12,8 +12,9 @@ const airWords = /净化|空气置地机/u;
 export function planEventCorrection(text, item, devices, getControls = () => []) {
   const linked = (item.deviceIds || []).map(id => devices.find(device => device.id === id)).filter(Boolean);
   const commands = new Map(), held = new Set();
-  const clauses = text.split(/[，,。；;！!？?\n]+/u).map(value => value.trim()).filter(Boolean);
-  let correction = '', understood = false;
+  const note = item.elderExample && text.trim().match(/^补充记录[：:]\s*(.+)$/u);
+  const clauses = note ? [] : text.split(/[，,。；;！!？?\n]+/u).map(value => value.trim()).filter(Boolean);
+  let correction = note ? note[1] : '', understood = Boolean(note);
   for (const clause of clauses) {
     if (/以后|今后|下次|每次|一直|长期|每天/u.test(clause)) return { reply: '这里先处理这一次。你希望这次具体怎么调整？' };
     if (correction && /^(?:是|而是|我在|是在|现在|我们在)/u.test(clause) && /看电视|观影|聊天|阅读|休息|吃饭/u.test(clause)) { correction += `；${clause}`; continue; }
@@ -159,7 +160,7 @@ export function createEventAdjustment({ sheet, openSheet, getDevices, getControl
     const now = previewNow(), recordText = [plan.correction ? `用户纠正：${plan.correction}` : '', ...results.map(({ command, result }) => `${getDevices().find(device => device.id === command.id)?.name || '原设备'}：${result?.ok ? result.device?.statusText || '设备已确认' : result?.message || '尚未确认'}`)].filter(Boolean).join('；');
     session.busy = false;
     if (failed.length) feedback.text = `${ok.length ? `${ok.length}项调整已确认；` : ''}${failed.map(entry => `${getDevices().find(device => device.id === entry.command.id)?.name || '设备'}${entry.result?.message || '尚未确认'}`).join('；')}。可以继续说明要修改的内容。`;
-    else feedback.text = plan.commands.length ? `${plan.lines.join('；')}。设备已确认本次调整。` : '已记录你对这件事的纠正，相关设备保持当前设置。';
+    else feedback.text = plan.commands.length ? `${plan.lines.join('；')}。设备已确认本次调整。` : '你的补充已保存在这条照料记录里。';
     const oldCorrections = session.item.eventCorrections || [];
     const eventCorrections = plan.correction ? [...oldCorrections, { text: plan.correction, at: now }] : oldCorrections;
     const summary = failed.length ? recordText : plan.commands.length ? `${plan.lines.join('；')}，设备已确认` : session.item.summary;
